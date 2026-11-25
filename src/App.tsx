@@ -373,6 +373,7 @@ export function App() {
                 refreshRecentTrips();
                 setSidebarOpen(true);
               }}
+              onGoHome={handleGoHome}
               onTripLoaded={handleTripLoaded}
               onTripTitleChange={(title) => {
                 setCurrentTripTitle(title);

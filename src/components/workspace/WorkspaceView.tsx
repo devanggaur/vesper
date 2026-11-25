@@ -55,6 +55,7 @@ interface WorkspaceViewProps {
   theme: VesperTheme;
   onChangeTheme: (t: VesperTheme) => void;
   onOpenSidebar: () => void;
+  onGoHome: () => void;
   onTripLoaded?: (meta: { id: string; slug: string; title: string }) => void;
   onTripTitleChange: (title: string) => void;
   onNotify: (msg: string) => void;
@@ -85,6 +86,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   theme,
   onChangeTheme,
   onOpenSidebar,
+  onGoHome,
   onTripLoaded,
   onTripTitleChange,
   onNotify,
@@ -790,10 +792,18 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             >
               <Menu className="w-[18px] h-[18px]" strokeWidth={1.8} />
             </button>
-            <BrandMark size={26} className="shrink-0" />
-            <div className="font-editorial text-[20px] sm:text-[22px] font-medium text-[#14191F] leading-none shrink-0">
-              Vesper
-            </div>
+            <button
+              type="button"
+              onClick={onGoHome}
+              title="Back to Vesper home"
+              aria-label="Return to Vesper home"
+              className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 -mx-1 hover:bg-black/[0.04] transition-colors cursor-pointer shrink-0"
+            >
+              <BrandMark size={26} className="shrink-0" />
+              <span className="font-editorial text-[20px] sm:text-[22px] font-medium text-[#14191F] leading-none">
+                Vesper
+              </span>
+            </button>
           </div>
 
           {/* Desktop 4-Tab Canvas Switcher */}
