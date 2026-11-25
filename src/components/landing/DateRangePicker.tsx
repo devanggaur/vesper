@@ -39,20 +39,18 @@ const FLEX_DURATIONS = [
   { id: '2 weeks', label: '2 weeks', sub: '12–15 days' },
 ];
 
-const FLEX_MONTH_CARDS = [
-  { key: 'Dec 2026', month: 'Dec', year: '2026' },
-  { key: 'Jan 2027', month: 'Jan', year: '2027' },
-  { key: 'Feb 2027', month: 'Feb', year: '2027' },
-  { key: 'Mar 2027', month: 'Mar', year: '2027' },
-  { key: 'Apr 2027', month: 'Apr', year: '2027' },
-  { key: 'May 2027', month: 'May', year: '2027' },
-  { key: 'Jun 2026', month: 'Jun', year: '2026' },
-  { key: 'Jul 2026', month: 'Jul', year: '2026' },
-  { key: 'Aug 2026', month: 'Aug', year: '2026' },
-  { key: 'Sep 2026', month: 'Sep', year: '2026' },
-  { key: 'Oct 2026', month: 'Oct', year: '2026' },
-  { key: 'Nov 2026', month: 'Nov', year: '2026' },
-];
+/** Builds the next 12 upcoming months dynamically starting from today (no past months). */
+function getUpcomingFlexMonths(): Array<{ key: string; month: string; year: string }> {
+  const now = new Date();
+  const baseYear = now.getFullYear();
+  const baseMonth = now.getMonth();
+  return Array.from({ length: 12 }, (_, offset) => {
+    const d = new Date(baseYear, baseMonth + offset, 1);
+    const month = MONTH_SHORT[d.getMonth()];
+    const year = String(d.getFullYear());
+    return { key: `${month} ${year}`, month, year };
+  });
+}
 
 function isSameDay(a: Date | null, b: Date | null): boolean {
   if (!a || !b) return false;
@@ -84,20 +82,64 @@ export function formatSelectionLabel(sel: Omit<TripDateSelection, 'label'>): str
   return `${rangeStr}${tolStr} (${nights}n)`;
 }
 
+/** Returns a sensible default future 3-night weekend starting ~2 weeks from today. */
+export function getDefaultTripDateSelection(): TripDateSelection {
+  const now = new Date();
+  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14);
+  // Snap forward to Friday (day 5) for a clean weekend default
+  const daysUntilFri = (5 - base.getDay() + 7) % 7;
+  const startDate = new Date(base.getFullYear(), base.getMonth(), base.getDate() + daysUntilFri);
+  const endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 3);
+  const defaultMonth = `${MONTH_SHORT[startDate.getMonth()]} ${startDate.getFullYear()}`;
+  const draft = {
+    mode: 'exact' as const,
+    startDate,
+    endDate,
+    tolerance: 0,
+    flexDuration: 'Weekend',
+    flexMonths: [defaultMonth],
+  };
+  return { ...draft, label: formatSelectionLabel(draft) };
+}
+
 export const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChange, onClose }) => {
+  const today = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }, []);
+  const todayTs = today.getTime();
+  const flexMonthCards = useMemo(() => getUpcomingFlexMonths(), []);
+
+  // Clamp any stale past initial dates cleanly to null so past dates can never stay selected
+  const initialStart = value.startDate && stripTime(value.startDate) >= todayTs ? value.startDate : null;
+  const initialEnd =
+    initialStart && value.endDate && stripTime(value.endDate) >= stripTime(initialStart)
+      ? value.endDate
+      : null;
+
   const [tab, setTab] = useState<'exact' | 'flexible'>(value.mode);
-  const [startDate, setStartDate] = useState<Date | null>(value.startDate);
-  const [endDate, setEndDate] = useState<Date | null>(value.endDate);
+  const [startDate, setStartDate] = useState<Date | null>(initialStart);
+  const [endDate, setEndDate] = useState<Date | null>(initialEnd);
   const [hoverDate, setHoverDate] = useState<Date | null>(null);
   const [tolerance, setTolerance] = useState<number>(value.tolerance);
   const [flexDuration, setFlexDuration] = useState<string>(value.flexDuration || 'Weekend');
-  const [flexMonths, setFlexMonths] = useState<string[]>(
-    value.flexMonths.length > 0 ? value.flexMonths : ['Jun 2026']
+  const [flexMonths, setFlexMonths] = useState<string[]>(() => {
+    const validKeys = new Set(flexMonthCards.map((c) => c.key));
+    const kept = (value.flexMonths || []).filter((k) => validKeys.has(k));
+    return kept.length > 0 ? kept : [flexMonthCards[0].key];
+  });
+
+  // Start calendar view on selected future startDate or current month (never in the past)
+  const [viewYear, setViewYear] = useState<number>(
+    initialStart ? initialStart.getFullYear() : today.getFullYear()
+  );
+  const [viewMonth, setViewMonth] = useState<number>(
+    initialStart ? initialStart.getMonth() : today.getMonth()
   );
 
-  // Start calendar view on startDate's month (defaults to June 2026)
-  const [viewYear, setViewYear] = useState<number>(value.startDate ? value.startDate.getFullYear() : 2026);
-  const [viewMonth, setViewMonth] = useState<number>(value.startDate ? value.startDate.getMonth() : 5);
+  const canGoPrevMonth =
+    viewYear > today.getFullYear() ||
+    (viewYear === today.getFullYear() && viewMonth > today.getMonth());
 
   const nextMonthInfo = useMemo(() => {
     const m = (viewMonth + 1) % 12;
@@ -106,6 +148,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChang
   }, [viewYear, viewMonth]);
 
   const shiftMonth = (delta: number) => {
+    if (delta < 0 && !canGoPrevMonth) return;
     let m = viewMonth + delta;
     let y = viewYear;
     if (m < 0) {
@@ -115,11 +158,15 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChang
       m = 0;
       y += 1;
     }
+    if (y < today.getFullYear() || (y === today.getFullYear() && m < today.getMonth())) {
+      return;
+    }
     setViewMonth(m);
     setViewYear(y);
   };
 
   const handleDayClick = (date: Date) => {
+    if (stripTime(date) < todayTs) return;
     if (!startDate || (startDate && endDate)) {
       setStartDate(date);
       setEndDate(null);
@@ -185,31 +232,41 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChang
           {cells.map((day, idx) => {
             if (!day) return <div key={`empty-${idx}`} className="h-8" />;
             const ts = stripTime(day);
-            const isStart = isSameDay(day, startDate);
-            const isEnd = isSameDay(day, endDate);
+            const isPast = ts < todayTs;
+            const isToday = ts === todayTs;
+            const isStart = !isPast && isSameDay(day, startDate);
+            const isEnd = !isPast && isSameDay(day, endDate);
             const isSelectedEdge = isStart || isEnd;
             const inRange =
+              !isPast &&
               startDate &&
               previewEnd &&
               ts > stripTime(startDate) &&
               ts < stripTime(previewEnd);
-            const isPreviewEnd = !endDate && previewEnd && isSameDay(day, previewEnd);
+            const isPreviewEnd = !isPast && !endDate && previewEnd && isSameDay(day, previewEnd);
 
             return (
               <button
                 key={ts}
                 type="button"
-                onMouseEnter={() => setHoverDate(day)}
+                disabled={isPast}
+                onMouseEnter={() => {
+                  if (!isPast) setHoverDate(day);
+                }}
                 onMouseLeave={() => setHoverDate(null)}
                 onClick={() => handleDayClick(day)}
-                className={`h-8 w-full flex items-center justify-center text-[12.5px] font-tabular transition-all cursor-pointer relative ${
-                  isSelectedEdge
-                    ? 'rounded-full bg-[#0E2034] font-semibold shadow-2xs z-10'
+                className={`h-8 w-full flex items-center justify-center text-[12.5px] font-tabular transition-all relative ${
+                  isPast
+                    ? 'text-[#8A9097]/40 line-through cursor-not-allowed'
+                    : isSelectedEdge
+                    ? 'rounded-full bg-[#0E2034] font-semibold shadow-2xs z-10 cursor-pointer'
                     : isPreviewEnd
-                    ? 'rounded-full border border-[#0E2034] bg-[#ECEAE2] text-[#14191F] font-semibold'
+                    ? 'rounded-full border border-[#0E2034] bg-[#ECEAE2] text-[#14191F] font-semibold cursor-pointer'
                     : inRange
-                    ? 'bg-[#ECEAE2] text-[#14191F]'
-                    : 'rounded-full text-[#2C333A] hover:bg-black/[0.06]'
+                    ? 'bg-[#ECEAE2] text-[#14191F] cursor-pointer'
+                    : isToday
+                    ? 'rounded-full border border-[#C85A17]/60 text-[#14191F] font-semibold hover:bg-black/[0.06] cursor-pointer'
+                    : 'rounded-full text-[#2C333A] hover:bg-black/[0.06] cursor-pointer'
                 }`}
               >
                 {day.getDate()}
@@ -284,8 +341,13 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChang
               <div className="flex items-center justify-between gap-2">
                 <button
                   type="button"
+                  disabled={!canGoPrevMonth}
                   onClick={() => shiftMonth(-1)}
-                  className="w-8 h-8 rounded-full border border-black/[0.1] hover:bg-black/[0.04] flex items-center justify-center text-[#14191F] cursor-pointer"
+                  className={`w-8 h-8 rounded-full border border-black/[0.1] flex items-center justify-center text-[#14191F] transition-opacity ${
+                    canGoPrevMonth
+                      ? 'hover:bg-black/[0.04] cursor-pointer'
+                      : 'opacity-30 cursor-not-allowed'
+                  }`}
                   aria-label="Previous month"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -378,7 +440,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChang
                   <span className="text-[11.5px] text-[#7B828A]">Pick up to 3 months</span>
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                  {FLEX_MONTH_CARDS.map((mc) => {
+                  {flexMonthCards.map((mc) => {
                     const active = flexMonths.includes(mc.key);
                     return (
                       <button
@@ -414,7 +476,9 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ value, onChang
               setEndDate(null);
               setTolerance(0);
               setFlexDuration('Weekend');
-              setFlexMonths(['Jun 2026']);
+              setFlexMonths([flexMonthCards[0].key]);
+              setViewYear(today.getFullYear());
+              setViewMonth(today.getMonth());
             }}
             className="text-[12.5px] font-medium text-[#5A626A] hover:text-[#14191F] underline cursor-pointer"
           >

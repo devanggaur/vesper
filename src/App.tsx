@@ -5,6 +5,7 @@ import { AppView, TripSummary } from './types/travel';
 import { travelApi } from './services/travelApi';
 import { supabaseBrowser } from './lib/supabaseClient';
 import { LandingView } from './components/landing/LandingView';
+import { getDefaultTripDateSelection } from './components/landing/DateRangePicker';
 import { WorkspaceView } from './components/workspace/WorkspaceView';
 import { TripSidebar } from './components/common/TripSidebar';
 import { AuthModal } from './components/common/AuthModal';
@@ -61,7 +62,7 @@ export function App() {
   const [initialPrompt, setInitialPrompt] = useState(
     'Hey, Vesper, plan a trip to Mexico City for a weekend on June 18th'
   );
-  const [initialDates, setInitialDates] = useState('Jun 18 – 21 (3n)');
+  const [initialDates, setInitialDates] = useState(() => getDefaultTripDateSelection().label);
   const [initialTravelers, setInitialTravelers] = useState('2 adults');
   const [focusMode, setFocusMode] = useState<'flights' | 'stays' | 'activities' | undefined>(
     undefined

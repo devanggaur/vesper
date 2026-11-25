@@ -19,7 +19,11 @@ import {
 import { BrandMark } from '../common/BrandMark';
 import { SmartImage } from '../common/SmartImage';
 import { ThemeSwitcher, VesperTheme } from '../common/ThemeSwitcher';
-import { DateRangePicker, TripDateSelection } from './DateRangePicker';
+import {
+  DateRangePicker,
+  getDefaultTripDateSelection,
+  TripDateSelection,
+} from './DateRangePicker';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 import {
   ALL_POSTCARDS,
@@ -63,15 +67,9 @@ export const LandingView: React.FC<LandingViewProps> = ({
 }) => {
   const [prompt, setPrompt] = useState('');
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
-  const [dateSelection, setDateSelection] = useState<TripDateSelection>({
-    mode: 'exact',
-    startDate: new Date(2026, 5, 18),
-    endDate: new Date(2026, 5, 21),
-    tolerance: 0,
-    flexDuration: 'Weekend',
-    flexMonths: ['Jun 2026'],
-    label: 'Jun 18 – 21 (3n)',
-  });
+  const [dateSelection, setDateSelection] = useState<TripDateSelection>(() =>
+    getDefaultTripDateSelection()
+  );
   const [guestsLabel, setGuestsLabel] = useState('2 adults');
   const [tripMode, setTripMode] = useState<'full' | 'stays' | 'flights' | 'activities'>('full');
   const [showDatePicker, setShowDatePicker] = useState(false);
