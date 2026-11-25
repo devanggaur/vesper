@@ -1,0 +1,363 @@
+@import "tailwindcss";
+
+/* ── Theme 1: Twilight Editorial (Default for Vesper) ───────────────────── */
+:root,
+[data-theme="twilight"] {
+  --v-font-serif: "Instrument Serif", Georgia, serif;
+  --v-font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --v-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --v-display-scale: 1.08;
+  --v-display-tracking: -0.015em;
+
+  --v-canvas: #F5F2EC;
+  --v-canvas-subtle: #EAE6DC;
+  --v-surface: #FFFDF9;
+  --v-surface-alt: #F1EDE4;
+  --v-ink: #151B2B;
+  --v-ink-secondary: #333C4E;
+  --v-ink-muted: #5F6675;
+  --v-ink-subtle: #8890A0;
+  --v-cta: #151B2B;
+  --v-cta-hover: #242E46;
+  --v-cta-text: #FFFDF9;
+  --v-accent: #C05A2B;
+  --v-badge-bg: rgba(192, 90, 43, 0.13);
+  --v-badge-text: #9E441C;
+  --v-border: rgba(21, 27, 43, 0.09);
+  --v-border-strong: rgba(21, 27, 43, 0.18);
+  --v-hover-tint: rgba(21, 27, 43, 0.045);
+  --v-shadow-card: 0 2px 12px rgba(21, 27, 43, 0.045);
+  --v-shadow-float: 0 12px 40px rgba(21, 27, 43, 0.09);
+  --v-shimmer-base: #8890A0;
+  --v-shimmer-peak: #151B2B;
+  --v-map-bg: #DCE6EE;
+}
+
+/* ── Theme 2: Nocturne (Moody Dark-Mode Luxury) ─────────────────────────── */
+[data-theme="nocturne"] {
+  --v-font-serif: "Fraunces", Georgia, serif;
+  --v-font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --v-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --v-display-scale: 0.96;
+  --v-display-tracking: -0.025em;
+
+  --v-canvas: #0E1117;
+  --v-canvas-subtle: #1A202C;
+  --v-surface: #151A23;
+  --v-surface-alt: #11151D;
+  --v-ink: #F3EFE6;
+  --v-ink-secondary: #D4CEC2;
+  --v-ink-muted: #9BA3B4;
+  --v-ink-subtle: #737D91;
+  --v-cta: #E5C585;
+  --v-cta-hover: #F2D79E;
+  --v-cta-text: #11151D;
+  --v-accent: #E5C585;
+  --v-badge-bg: rgba(229, 197, 133, 0.16);
+  --v-badge-text: #E5C585;
+  --v-border: rgba(255, 255, 255, 0.09);
+  --v-border-strong: rgba(255, 255, 255, 0.18);
+  --v-hover-tint: rgba(255, 255, 255, 0.06);
+  --v-shadow-card: 0 4px 18px rgba(0, 0, 0, 0.32);
+  --v-shadow-float: 0 14px 44px rgba(0, 0, 0, 0.55);
+  --v-shimmer-base: #6F7888;
+  --v-shimmer-peak: #F3EFE6;
+  --v-map-bg: #11161F;
+}
+
+/* ── Theme 3: Mediterranean Sun (Warm Olive & Terracotta) ───────────────── */
+[data-theme="mediterranean"] {
+  --v-font-serif: "Fraunces", Georgia, serif;
+  --v-font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --v-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --v-display-scale: 0.96;
+  --v-display-tracking: -0.025em;
+
+  --v-canvas: #F6F2EA;
+  --v-canvas-subtle: #EAE3D5;
+  --v-surface: #FFFDF8;
+  --v-surface-alt: #EFE9DD;
+  --v-ink: #1E1A16;
+  --v-ink-secondary: #3E362E;
+  --v-ink-muted: #6C6155;
+  --v-ink-subtle: #928678;
+  --v-cta: #1F3A2E;
+  --v-cta-hover: #2A4D3E;
+  --v-cta-text: #FFFDF8;
+  --v-accent: #B84A27;
+  --v-badge-bg: rgba(184, 74, 39, 0.13);
+  --v-badge-text: #9E3C1D;
+  --v-border: rgba(30, 26, 22, 0.09);
+  --v-border-strong: rgba(30, 26, 22, 0.18);
+  --v-hover-tint: rgba(30, 26, 22, 0.045);
+  --v-shadow-card: 0 2px 12px rgba(30, 26, 22, 0.045);
+  --v-shadow-float: 0 12px 40px rgba(30, 26, 22, 0.085);
+  --v-shimmer-base: #928678;
+  --v-shimmer-peak: #1E1A16;
+  --v-map-bg: #E3E7E2;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    height: 100dvh;
+    font-family: var(--v-font-sans);
+    background-color: var(--v-canvas);
+    color: var(--v-ink);
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 240ms ease, color 240ms ease;
+  }
+
+  ::selection {
+    background-color: var(--v-cta);
+    color: var(--v-cta-text);
+  }
+}
+
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.font-editorial {
+  font-family: var(--v-font-serif);
+  letter-spacing: var(--v-display-tracking);
+}
+
+.font-tabular {
+  font-family: var(--v-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Global Semantic Theme Bridges ─────────────────────────────────────────
+   Ensures every surface, ink, button, border, and subtle pill adapts cleanly
+   across Twilight Editorial, Nocturne (Dark), and Mediterranean Sun.        */
+
+[data-theme] .bg-\[\#F7F6F1\],
+[data-theme] .bg-\[\#F7F6F1\]\/95,
+[data-theme] .bg-\[\#F7F6F1\]\/70 {
+  background-color: var(--v-canvas) !important;
+}
+
+[data-theme] .bg-\[\#FAF9F5\],
+[data-theme] .bg-\[\#FAF9F5\]\/80,
+[data-theme] .bg-\[\#F4F3EE\],
+[data-theme] .bg-\[\#F5F4EE\] {
+  background-color: var(--v-surface-alt) !important;
+}
+
+[data-theme] .bg-\[\#ECEAE2\],
+[data-theme] .bg-\[\#ECEAE2\]\/75,
+[data-theme] .bg-\[\#F3F2EC\],
+[data-theme] .bg-\[\#F3F2EC\]\/90,
+[data-theme] .bg-\[\#E9E7DF\] {
+  background-color: var(--v-canvas-subtle) !important;
+}
+
+[data-theme] .bg-white,
+[data-theme] .bg-white\/95,
+[data-theme] .bg-white\/90,
+[data-theme] .bg-white\/80,
+[data-theme] .bg-white\/60 {
+  background-color: var(--v-surface) !important;
+}
+
+[data-theme] .bg-\[\#0E2034\] {
+  background-color: var(--v-cta) !important;
+  color: var(--v-cta-text) !important;
+}
+[data-theme] .hover\:bg-\[\#17304D\]:hover {
+  background-color: var(--v-cta-hover) !important;
+}
+[data-theme] .hover\:bg-\[\#0E2034\]:hover {
+  background-color: var(--v-cta) !important;
+  color: var(--v-cta-text) !important;
+}
+[data-theme] .border-\[\#0E2034\] {
+  border-color: var(--v-cta) !important;
+}
+[data-theme] .ring-\[\#0E2034\] {
+  --tw-ring-color: var(--v-cta) !important;
+}
+[data-theme] .text-\[\#0E2034\] {
+  color: var(--v-cta) !important;
+}
+
+/* Text ink layers */
+[data-theme] .text-\[\#14191F\] {
+  color: var(--v-ink) !important;
+}
+[data-theme] .text-\[\#2C333A\] {
+  color: var(--v-ink-secondary) !important;
+}
+[data-theme] .text-\[\#4A535C\],
+[data-theme] .text-\[\#5A626A\] {
+  color: var(--v-ink-muted) !important;
+}
+[data-theme] .text-\[\#7B828A\],
+[data-theme] .text-\[\#8A9097\] {
+  color: var(--v-ink-subtle) !important;
+}
+[data-theme] .placeholder\:text-\[\#7B828A\]::placeholder,
+[data-theme] .placeholder\:text-\[\#8A9097\]::placeholder {
+  color: var(--v-ink-subtle) !important;
+}
+
+/* Accents, stars & gold rating badges */
+[data-theme] .text-\[\#C85A17\],
+[data-theme] .fill-\[\#C85A17\] {
+  color: var(--v-accent) !important;
+  fill: var(--v-accent) !important;
+}
+[data-theme] .bg-\[\#B68E35\]\/15,
+[data-theme] .bg-\[\#B68E35\]\/10 {
+  background-color: var(--v-badge-bg) !important;
+}
+[data-theme] .text-\[\#8E6C1E\],
+[data-theme] .text-\[\#B68E35\] {
+  color: var(--v-badge-text) !important;
+}
+
+/* Subtle borders, dividers & hovers */
+[data-theme] [class*="border-black/"] {
+  border-color: var(--v-border) !important;
+}
+[data-theme] [class*="divide-black/"] > :not(:last-child) {
+  border-color: var(--v-border) !important;
+}
+[data-theme] .hover\:bg-black\/\[0\.04\]:hover,
+[data-theme] .hover\:bg-black\/\[0\.05\]:hover,
+[data-theme] .hover\:bg-black\/\[0\.03\]:hover {
+  background-color: var(--v-hover-tint) !important;
+}
+[data-theme] .hover\:bg-\[\#F7F6F1\]:hover {
+  background-color: var(--v-hover-tint) !important;
+}
+[data-theme] .hover\:border-\[\#0E2034\]:hover {
+  border-color: var(--v-cta) !important;
+}
+
+/* Nocturne-specific fine contrast adjustments */
+[data-theme="nocturne"] .bg-\[\#0E2034\] span.bg-white\/18,
+[data-theme="nocturne"] .bg-\[\#0E2034\] span.bg-white\/20 {
+  background-color: rgba(17, 21, 29, 0.2) !important;
+  color: #11151D !important;
+}
+[data-theme="nocturne"] .bg-\[\#0E2034\] svg {
+  color: #11151D !important;
+}
+[data-theme="nocturne"] .text-\[\#1C3F94\],
+[data-theme="nocturne"] .text-\[\#0B2343\] {
+  color: #93B4F5 !important;
+}
+[data-theme="nocturne"] .bg-black\/15 {
+  background-color: rgba(255, 255, 255, 0.22) !important;
+}
+[data-theme="nocturne"] .bg-black\/25,
+[data-theme="nocturne"] .bg-black\/30 {
+  background-color: rgba(255, 255, 255, 0.35) !important;
+}
+[data-theme="nocturne"] .text-black\/20 {
+  color: rgba(255, 255, 255, 0.28) !important;
+}
+[data-theme="nocturne"] select option {
+  background-color: #151A23;
+  color: #F3EFE6;
+}
+[data-theme="nocturne"] .bg-emerald-100,
+[data-theme="nocturne"] .bg-emerald-100\/80 {
+  background-color: rgba(16, 185, 129, 0.18) !important;
+  color: #6EE7B7 !important;
+}
+[data-theme="nocturne"] .text-emerald-700 {
+  color: #6EE7B7 !important;
+}
+[data-theme="nocturne"] .hover\:text-white:hover {
+  color: var(--v-cta-text) !important;
+}
+
+/* Custom ultra-clean scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--v-border-strong);
+  border-radius: 999px;
+}
+
+/* Thinking text shimmer */
+@keyframes textShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.thinking-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--v-shimmer-base) 0%,
+    var(--v-shimmer-base) 35%,
+    var(--v-shimmer-peak) 50%,
+    var(--v-shimmer-base) 65%,
+    var(--v-shimmer-base) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: textShimmer 2.4s linear infinite;
+}
+
+/* Subtle skeleton pulse */
+@keyframes softPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.skeleton-pulse {
+  animation: softPulse 1.5s ease-in-out infinite;
+}
+
+/* Slow serene postcard horizon marquee (pauses smoothly on hover) */
+@keyframes vesperMarqueeLeft {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes vesperMarqueeRight {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+.vesper-marquee-left {
+  display: flex;
+  width: max-content;
+  animation: vesperMarqueeLeft 58s linear infinite;
+}
+.vesper-marquee-right {
+  display: flex;
+  width: max-content;
+  animation: vesperMarqueeRight 64s linear infinite;
+}
+.vesper-marquee-row:hover .vesper-marquee-left,
+.vesper-marquee-row:hover .vesper-marquee-right {
+  animation-play-state: paused;
+}
+
+.vesper-edge-fade {
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
+}

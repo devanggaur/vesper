@@ -1,0 +1,246 @@
+export type AppView = 'landing' | 'workspace';
+
+export interface Coordinates {
+  lat: number;
+  lng: number;
+}
+
+export interface ActivityItem {
+  id: string;
+  title: string;
+  shortTitle: string;
+  rating: number;
+  reviews: number;
+  duration: string;
+  pricePerPerson: number;
+  tagline: string;
+  description: string;
+  aboutHeading: string;
+  aboutBody: string[];
+  highlights: string[];
+  image: string;
+  gallery: string[];
+  coords: Coordinates;
+  slots: {
+    id: string;
+    time: string;
+    endTime: string;
+    spotsLeft: number;
+    pricePerPerson: number;
+  }[];
+  category: string;
+}
+
+export interface PlaceItem {
+  id: string;
+  name: string;
+  category: string;
+  section: 'museums' | 'contemporary' | 'food' | 'landmarks';
+  rating: number;
+  reviews: number;
+  priceTier?: string;
+  shortDescription: string;
+  editorialSummary: string;
+  image: string;
+  gallery: string[];
+  photoCredit: string;
+  coords: Coordinates;
+  hours: {
+    closedDay?: string;
+    openSchedule: string;
+  };
+  details: {
+    goodForChildren?: boolean;
+    restroom?: boolean;
+    parking?: string;
+    accessibility?: string;
+    reservationNote?: string;
+  };
+  website: string;
+  phone: string;
+  neighborhood: string;
+  suggestedDay?: string;
+  suggestedTime?: string;
+}
+
+export interface HotelRoom {
+  id: string;
+  name: string;
+  sqft: number;
+  beds: string;
+  images: string[];
+  rates: {
+    id: string;
+    label: string;
+    subtitle: string;
+    price: number;
+    delta?: string;
+  }[];
+  description: string;
+}
+
+export interface HotelDeepDiveSection {
+  id: string;
+  label: string;
+  title: string;
+  items: {
+    heading: string;
+    body: string;
+  }[];
+  image?: string;
+  reviewsSample?: {
+    author: string;
+    initials: string;
+    text: string;
+    rating: string;
+  }[];
+}
+
+export interface HotelItem {
+  id: string;
+  name: string;
+  neighborhood: string;
+  rating: number;
+  reviews: number;
+  stars: number;
+  priceTotal: number;
+  tagline: string;
+  shortDescription: string;
+  pickLabel?: string;
+  whyChoose?: string;
+  accolade?: string;
+  image: string;
+  gallery: string[];
+  coords: Coordinates;
+  highlights: {
+    icon: 'map' | 'bed' | 'sparkle' | 'building' | 'washer' | 'tree';
+    title: string;
+    description: string;
+  }[];
+  rooms: HotelRoom[];
+  deepDive: HotelDeepDiveSection[];
+}
+
+export interface FlightOption {
+  id: string;
+  airline: string;
+  flightNumber: string;
+  departTime: string;
+  arriveTime: string;
+  arriveNextDay?: boolean;
+  fromCode: string;
+  toCode: string;
+  duration: string;
+  stops: string;
+  stopDetails?: string;
+  priceRoundTrip: number;
+  direction: 'outbound' | 'return';
+}
+
+export interface FareClass {
+  id: string;
+  name: string;
+  price: number;
+  delta: number;
+  features: {
+    label: string;
+    included: boolean;
+    note?: string;
+  }[];
+}
+
+export interface TripSavedItem {
+  id: string;
+  refId: string;
+  type: 'activity' | 'place' | 'hotel' | 'flight';
+  title: string;
+  subtitle?: string;
+  image: string;
+  day: string;
+  time?: string;
+  price?: number;
+  coords?: Coordinates;
+  flightDetails?: {
+    outbound: FlightOption;
+    inbound: FlightOption;
+    fareName: string;
+    passengers: number;
+  };
+  hotelDetails?: {
+    checkIn: string;
+    checkOut: string;
+    roomName: string;
+  };
+}
+
+export type ChatBlock =
+  | { type: 'text'; content: string }
+  | { type: 'bullets'; intro?: string; items: string[]; outro?: string }
+  | { type: 'suggestions'; items: string[] };
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text?: string;
+  blocks?: ChatBlock[];
+}
+
+export interface TripDayMeta {
+  key: string;
+  short: string;
+  themeLabel: string;
+  dotColor: string;
+}
+
+export interface DiscoverSection {
+  key: 'museums' | 'contemporary' | 'food' | 'landmarks';
+  title: string;
+  intro: string;
+  places: PlaceItem[];
+}
+
+export interface TripCatalogPayload {
+  activitiesTitle: string;
+  activities: ActivityItem[];
+  places: PlaceItem[];
+  sections: DiscoverSection[];
+  hotels: HotelItem[];
+}
+
+export interface TripSummary {
+  id: string;
+  slug: string;
+  title: string;
+  destination: string;
+  country: string;
+  datesLabel: string;
+  travelers: string;
+  heroImage: string;
+  updatedAt: string;
+}
+
+export interface LiveTripMetadata {
+  id: string;
+  slug: string;
+  title: string;
+  destination: string;
+  country: string;
+  prompt: string;
+  datesLabel: string;
+  days: TripDayMeta[];
+  center: Coordinates;
+  heroImage: string;
+  travelers: string;
+  tasteProfile?: {
+    travelers: string;
+    vibes: string[];
+    pace: 'Unhurried' | 'Balanced' | 'Packed';
+    splurge: 'Smart' | 'Elevated' | 'Iconic';
+  } | null;
+  catalog?: TripCatalogPayload | null;
+}
+
+export interface CoPilotAction {
+  type: 'none' | 'switch_tab' | 'organize' | 'open_bookings_stays' | 'open_bookings_flights' | 'open_map';
+  tab?: 'discover' | 'timeline' | 'map' | 'bookings';
+}

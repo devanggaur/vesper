@@ -1,0 +1,40 @@
+import 'dotenv/config';
+
+/**
+ * Validated runtime configuration for the Vesper backend API.
+ * All secrets stay strictly server-side and are never shipped to the browser bundle.
+ */
+export const config = {
+  port: Number(process.env.PORT || 8787),
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
+  googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY || '',
+  supabaseUrl: process.env.SUPABASE_URL || '',
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  /** Optional Phase 3 live GDS / Hotel API keys (falls back cleanly when unset) */
+  amadeusClientId: process.env.AMADEUS_CLIENT_ID || '',
+  amadeusClientSecret: process.env.AMADEUS_CLIENT_SECRET || '',
+  amadeusBaseUrl: process.env.AMADEUS_BASE_URL || 'https://test.api.amadeus.com',
+  liteApiKey: process.env.LITEAPI_KEY || '',
+  /** Fast, low-cost model fallback chain so transient 503 demand spikes fail over quickly */
+  geminiModels: [
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-4-argon',
+    'gemini-4-hydrogen',
+  ] as const,
+  /** Per-attempt timeout (ms) before failing over to next model */
+  geminiTimeoutMs: 12000,
+};
+
+export function assertConfig(): void {
+  const missing: string[] = [];
+  if (!config.geminiApiKey) missing.push('GEMINI_API_KEY');
+  if (!config.googlePlacesApiKey) missing.push('GOOGLE_PLACES_API_KEY');
+  if (!config.supabaseUrl) missing.push('SUPABASE_URL');
+  if (!config.supabaseServiceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (missing.length > 0) {
+    console.warn(`[vesper-api] Missing env vars: ${missing.join(', ')}`);
+  }
+}
