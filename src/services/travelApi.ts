@@ -26,6 +26,7 @@ import {
   FlightOption,
   HotelItem,
   LiveTripMetadata,
+  LoyaltyProgramEntry,
   PlaceItem,
   TripCatalogPayload,
   TripDayMeta,
@@ -78,6 +79,7 @@ export interface UserPreferencesProfile {
     pace: 'Unhurried' | 'Balanced' | 'Packed';
     splurge: 'Smart' | 'Elevated' | 'Iconic';
   } | null;
+  loyaltyPrograms: LoyaltyProgramEntry[];
 }
 
 export const DEFAULT_CDMX_DAYS: TripDayMeta[] = [
@@ -153,6 +155,7 @@ export const travelApi = {
     homeAirport?: string;
     preferredTheme?: 'twilight' | 'nocturne' | 'mediterranean';
     defaultTaste?: UserPreferencesProfile['defaultTaste'];
+    loyaltyPrograms?: LoyaltyProgramEntry[];
   }): Promise<UserPreferencesProfile | null> {
     const res = await apiFetch<{ profile: UserPreferencesProfile | null }>('/api/profile', {
       method: 'PATCH',
@@ -177,6 +180,7 @@ export const travelApi = {
     toCity: string;
     datesLabel: string;
     adults: number;
+    preferredAirlines?: string[];
   }): Promise<FlightSearchResponse> {
     return apiFetch<FlightSearchResponse>('/api/bookings/flights', {
       method: 'POST',
@@ -212,6 +216,7 @@ export const travelApi = {
       vibes: string[];
       pace: 'Unhurried' | 'Balanced' | 'Packed';
       splurge: 'Smart' | 'Elevated' | 'Iconic';
+      loyaltyPrograms?: LoyaltyProgramEntry[];
     }
   ): Promise<{
     catalog: TripCatalogPayload;

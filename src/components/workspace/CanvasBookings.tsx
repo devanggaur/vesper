@@ -1,6 +1,12 @@
-import React from 'react';
-import { BedDouble, Plane, ArrowRight, CheckCircle2 } from 'lucide-react';
-import { FareClass, FlightOption, HotelItem, TripSavedItem } from '../../types/travel';
+import React, { useState } from 'react';
+import { BedDouble, Plane, ArrowRight, CheckCircle2, Award, X } from 'lucide-react';
+import {
+  FareClass,
+  FlightOption,
+  HotelItem,
+  LoyaltyProgramEntry,
+  TripSavedItem,
+} from '../../types/travel';
 import { travelApi } from '../../services/travelApi';
 import { HotelComparisonTable, HotelSearchCarousel } from './DiscoverCarousels';
 import { FlightSearchWidget } from './FlightSearchWidget';
@@ -11,6 +17,8 @@ interface CanvasBookingsProps {
   onChangeSubTab: (tab: 'stays' | 'flights') => void;
   homeAirport?: string;
   onChangeHomeAirport?: (airport: string) => void;
+  loyaltyPrograms?: LoyaltyProgramEntry[];
+  onOpenLoyaltyWallet?: (category: 'hotel' | 'airline') => void;
   destination?: string;
   datesLabel?: string;
   travelers?: string;
@@ -25,13 +33,16 @@ interface CanvasBookingsProps {
 }
 
 /**
- * Bookings Studio canvas tab combining Boutique Stays comparison and Round-Trip Flight search.
+ * Bookings Studio canvas tab combining Boutique Stays comparison, Round-Trip Flight search,
+ * and right-moment Loyalty Wallet nudges so users earn hotel points & frequent flyer miles.
  */
 export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   subTab,
   onChangeSubTab,
   homeAirport = 'San Francisco (SFO)',
   onChangeHomeAirport,
+  loyaltyPrograms = [],
+  onOpenLoyaltyWallet,
   destination = 'Mexico City',
   datesLabel = 'Jun 19 – 21',
   travelers = '2 adults',
@@ -44,6 +55,8 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   onOpenCheckout,
   onHoverId,
 }) => {
+  const [dismissedPrompt, setDismissedPrompt] = useState(false);
+
   const hotels = liveHotels && liveHotels.length > 0 ? liveHotels : travelApi.getHotels();
   const bookedHotel = items.find((i) => i.type === 'hotel');
   const bookedFlight = items.find((i) => i.type === 'flight');
@@ -51,6 +64,11 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   const totalCost = items.reduce((s, i) => s + (i.price || 0), 0);
 
   const topPicks = hotels.slice(0, 4);
+  const activeCategory: 'hotel' | 'airline' = subTab === 'stays' ? 'hotel' : 'airline';
+  const relevantLoyalty = loyaltyPrograms.filter((p) => p.category === activeCategory);
+  const preferredAirlines = loyaltyPrograms
+    .filter((p) => p.category === 'airline')
+    .map((p) => p.provider);
 
   return (
     <div className="max-w-[860px] mx-auto w-full space-y-6 pb-20 lg:pb-12">
@@ -134,6 +152,71 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
         </button>
       </div>
 
+      {/* Strategic Right-Moment Loyalty Banner (Stays -> Hotel Chains | Flights -> Airlines) */}
+      {onOpenLoyaltyWallet &&
+        (relevantLoyalty.length > 0 ? (
+          <div className="rounded-[18px] bg-[#FAF9F5] border border-black/[0.07] px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap text-[12px] text-[#2C333A]">
+              <Award className="w-4 h-4 text-[#C85A17] shrink-0" />
+              <span className="font-semibold text-[#14191F]">Active loyalty:</span>
+              {relevantLoyalty.map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white border border-black/[0.08] text-[11.5px] font-medium text-[#14191F]"
+                >
+                  <span>{entry.programName}</span>
+                  {entry.tier && <span className="text-[#8E6C1E]">· {entry.tier}</span>}
+                </span>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenLoyaltyWallet(activeCategory)}
+              className="text-[12px] font-semibold text-[#14191F] hover:underline cursor-pointer shrink-0"
+            >
+              Manage
+            </button>
+          </div>
+        ) : !dismissedPrompt ? (
+          <div className="rounded-[18px] bg-[#FAF9F5] border border-black/[0.08] px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-[#ECEAE2] flex items-center justify-center text-[#C85A17] shrink-0">
+                <Award className="w-4 h-4" />
+              </div>
+              <p className="text-[12.5px] text-[#2C333A] leading-snug">
+                {subTab === 'stays' ? (
+                  <>
+                    <strong className="text-[#14191F]">Earn hotel points?</strong> Save Marriott
+                    Bonvoy, World of Hyatt, or Hilton Honors to prioritize points-eligible stays.
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-[#14191F]">Earn frequent flyer miles?</strong> Add
+                    United, Delta, or AAdvantage to prioritize your preferred airline alliance.
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => onOpenLoyaltyWallet(activeCategory)}
+                className="px-3 py-1.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[12px] font-medium cursor-pointer"
+              >
+                Add loyalty
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissedPrompt(true)}
+                className="p-1.5 rounded-full hover:bg-black/[0.05] text-[#7B828A] cursor-pointer"
+                aria-label="Dismiss loyalty prompt"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        ) : null)}
+
       {subTab === 'stays' ? (
         <div className="space-y-7">
           {bookedHotel && bookedHotel.hotelDetails && (
@@ -181,6 +264,7 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
             to={destination}
             dates={datesLabel}
             passengers={travelers}
+            preferredAirlines={preferredAirlines}
             onChangeOrigin={onChangeHomeAirport}
             onAddFlights={onAddFlights}
           />

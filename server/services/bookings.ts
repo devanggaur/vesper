@@ -292,11 +292,15 @@ export async function searchFlightsForRoute(params: {
   toCity: string;
   datesLabel: string;
   adults: number;
+  preferredAirlines?: string[];
 }): Promise<LiveFlightSearchResult> {
   const fromNorm = params.fromCity.trim() || 'San Francisco';
   const toNorm = params.toCity.trim() || 'Mexico City';
   const adults = Math.min(8, Math.max(1, params.adults || 2));
-  const cacheKey = `flights:v1:${fromNorm.toLowerCase()}->${toNorm.toLowerCase()}:p${adults}`;
+  const prefKey = (params.preferredAirlines || []).map((a) => a.toLowerCase()).sort().join(',');
+  const cacheKey = `flights:v1:${fromNorm.toLowerCase()}->${toNorm.toLowerCase()}:p${adults}${
+    prefKey ? `:l=${prefKey}` : ''
+  }`;
 
   const cached = await store.getCache<LiveFlightSearchResult>(cacheKey);
   if (cached) {
@@ -456,7 +460,11 @@ export async function searchFlightsForRoute(params: {
         model: config.geminiModels[0],
         system_instruction:
           'You are an aviation route planner. Return accurate IATA codes, real carriers operating the route, realistic durations, and typical round-trip economy USD fares per adult.',
-        input: `Origin: ${fromNorm}\nDestination: ${toNorm}\nDates: ${params.datesLabel}`,
+        input: `Origin: ${fromNorm}\nDestination: ${toNorm}\nDates: ${params.datesLabel}${
+          params.preferredAirlines?.length
+            ? `\nTraveler's Preferred Frequent Flyer Airlines: ${params.preferredAirlines.join(', ')} (prioritize these carriers or their alliance partners first if they fly this route)`
+            : ''
+        }`,
         response_format: { type: 'text', mime_type: 'application/json', schema },
         store: false,
       }),

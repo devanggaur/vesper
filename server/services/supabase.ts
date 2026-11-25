@@ -25,6 +25,14 @@ export interface StoredProfile {
   home_airport: string;
   preferred_theme: string;
   default_taste: Record<string, unknown> | null;
+  loyalty_programs?: Array<{
+    id: string;
+    category: 'hotel' | 'airline';
+    provider: string;
+    programName: string;
+    memberNumber: string;
+    tier?: string;
+  }>;
   last_seen_at: string;
 }
 
@@ -221,11 +229,12 @@ class VesperStore {
       home_airport?: string;
       preferred_theme?: string;
       default_taste?: Record<string, unknown> | null;
+      loyalty_programs?: StoredProfile['loyalty_programs'];
     }
   ): Promise<StoredProfile | null> {
     if (!(await this.ensureChecked())) return null;
 
-    const { data, error } = await this.client!
+    let { data, error } = await this.client!
       .from('profiles')
       .upsert(
         {
@@ -240,6 +249,28 @@ class VesperStore {
       )
       .select('*')
       .maybeSingle();
+
+    // Gracefully retry without `loyalty_programs` if `phase5_loyalty.sql` hasn't run yet
+    if (error && patch.loyalty_programs !== undefined && error.message?.includes('loyalty_programs')) {
+      const { loyalty_programs: _ignored, ...restPatch } = patch;
+      const retry = await this.client!
+        .from('profiles')
+        .upsert(
+          {
+            id: user.id,
+            email: user.email,
+            full_name: user.name ?? null,
+            avatar_url: user.avatarUrl ?? null,
+            ...restPatch,
+            last_seen_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        )
+        .select('*')
+        .maybeSingle();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error || !data) return null;
     return data as StoredProfile;

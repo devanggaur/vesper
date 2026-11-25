@@ -14,6 +14,7 @@ const flightSearchSchema = z.object({
   toCity: z.string().min(1),
   datesLabel: z.string().default('Weekend getaway'),
   adults: z.number().int().min(1).max(8).default(2),
+  preferredAirlines: z.array(z.string()).max(6).optional(),
 });
 
 /**

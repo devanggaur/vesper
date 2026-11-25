@@ -244,3 +244,15 @@ export interface CoPilotAction {
   type: 'none' | 'switch_tab' | 'organize' | 'open_bookings_stays' | 'open_bookings_flights' | 'open_map';
   tab?: 'discover' | 'timeline' | 'map' | 'bookings';
 }
+
+/**
+ * Saved hotel or airline loyalty account (member number only — never passwords).
+ */
+export interface LoyaltyProgramEntry {
+  id: string;
+  category: 'hotel' | 'airline';
+  provider: string;
+  programName: string;
+  memberNumber: string;
+  tier?: string;
+}

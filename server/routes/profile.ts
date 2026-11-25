@@ -4,10 +4,19 @@ import { store } from '../services/supabase';
 
 export const profileRoutes = new Hono();
 
+const loyaltyItemSchema = z.object({
+  id: z.string().min(1),
+  category: z.enum(['hotel', 'airline']),
+  provider: z.string().min(1).max(60),
+  programName: z.string().min(1).max(80),
+  memberNumber: z.string().min(1).max(60),
+  tier: z.string().max(40).optional(),
+});
+
 /**
  * GET /api/profile
  * Fetches (and lazily syncs) the signed-in user's Vesper profile from `public.profiles`,
- * including their saved home airport, preferred theme, and cross-trip Taste Memory.
+ * including their home airport, preferred theme, Taste Memory, and Loyalty Wallet.
  */
 profileRoutes.get('/', async (c) => {
   const user = await store.verifyAccessToken(c.req.header('Authorization'));
@@ -24,6 +33,7 @@ profileRoutes.get('/', async (c) => {
           homeAirport: profile.home_airport,
           preferredTheme: profile.preferred_theme,
           defaultTaste: profile.default_taste,
+          loyaltyPrograms: Array.isArray(profile.loyalty_programs) ? profile.loyalty_programs : [],
         }
       : {
           id: user.id,
@@ -33,6 +43,7 @@ profileRoutes.get('/', async (c) => {
           homeAirport: 'San Francisco (SFO)',
           preferredTheme: 'twilight',
           defaultTaste: null,
+          loyaltyPrograms: [],
         },
   });
 });
@@ -49,11 +60,12 @@ const patchProfileSchema = z.object({
     })
     .nullable()
     .optional(),
+  loyaltyPrograms: z.array(loyaltyItemSchema).max(20).optional(),
 });
 
 /**
  * PATCH /api/profile
- * Persists cross-trip preferences (home airport, theme, default taste) in `public.profiles`.
+ * Persists cross-trip preferences (home airport, theme, default taste, loyalty wallet).
  */
 profileRoutes.patch('/', async (c) => {
   const user = await store.verifyAccessToken(c.req.header('Authorization'));
@@ -64,6 +76,7 @@ profileRoutes.patch('/', async (c) => {
     ...(body.homeAirport !== undefined ? { home_airport: body.homeAirport } : {}),
     ...(body.preferredTheme !== undefined ? { preferred_theme: body.preferredTheme } : {}),
     ...(body.defaultTaste !== undefined ? { default_taste: body.defaultTaste } : {}),
+    ...(body.loyaltyPrograms !== undefined ? { loyalty_programs: body.loyaltyPrograms } : {}),
   });
 
   return c.json({
@@ -77,6 +90,7 @@ profileRoutes.patch('/', async (c) => {
           homeAirport: updated.home_airport,
           preferredTheme: updated.preferred_theme,
           defaultTaste: updated.default_taste,
+          loyaltyPrograms: Array.isArray(updated.loyalty_programs) ? updated.loyalty_programs : [],
         }
       : null,
   });

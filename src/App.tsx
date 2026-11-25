@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check } from 'lucide-react';
-import { AppView, TripSummary } from './types/travel';
+import { AppView, LoyaltyProgramEntry, TripSummary } from './types/travel';
 import { travelApi, UserPreferencesProfile } from './services/travelApi';
 import { supabaseBrowser } from './lib/supabaseClient';
 import { LandingView } from './components/landing/LandingView';
@@ -10,6 +10,7 @@ import { WorkspaceView } from './components/workspace/WorkspaceView';
 import { TasteProfile } from './components/workspace/TasteCard';
 import { TripSidebar } from './components/common/TripSidebar';
 import { AuthModal } from './components/common/AuthModal';
+import { ProfileSettingsModal } from './components/common/ProfileSettingsModal';
 import { VesperTheme } from './components/common/ThemeSwitcher';
 
 interface UserProfile {
@@ -75,10 +76,23 @@ export function App() {
   const [workspaceKey, setWorkspaceKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileModalCategory, setProfileModalCategory] = useState<'hotel' | 'airline'>('hotel');
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const userProfileRef = useRef<UserProfile | null>(null);
   const [homeAirport, setHomeAirport] = useState('San Francisco (SFO)');
   const [defaultTaste, setDefaultTaste] = useState<TasteProfile | null>(null);
+  const [loyaltyPrograms, setLoyaltyPrograms] = useState<LoyaltyProgramEntry[]>(() => {
+    try {
+      const raw =
+        typeof window !== 'undefined' ? window.localStorage.getItem('vesper-loyalty-wallet') : null;
+      if (raw) return JSON.parse(raw) as LoyaltyProgramEntry[];
+    } catch {
+      // Ignore malformed storage
+    }
+    return [];
+  });
+  const loyaltyRef = useRef<LoyaltyProgramEntry[]>(loyaltyPrograms);
   const [currentTripTitle, setCurrentTripTitle] = useState('Mexico City Modernist Weekend');
   const [recentTrips, setRecentTrips] = useState<TripSummary[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -129,6 +143,27 @@ export function App() {
     }
   }, []);
 
+  const handleSaveLoyaltyPrograms = useCallback(
+    (next: LoyaltyProgramEntry[]) => {
+      loyaltyRef.current = next;
+      setLoyaltyPrograms(next);
+      try {
+        window.localStorage.setItem('vesper-loyalty-wallet', JSON.stringify(next));
+      } catch {
+        // Ignore storage errors
+      }
+      if (userProfileRef.current) {
+        travelApi.updateProfile({ loyaltyPrograms: next }).catch(() => {});
+      }
+    },
+    []
+  );
+
+  const openLoyaltyWallet = useCallback((category: 'hotel' | 'airline' = 'hotel') => {
+    setProfileModalCategory(category);
+    setProfileModalOpen(true);
+  }, []);
+
   const loadUserPreferences = useCallback(() => {
     travelApi
       .getProfile()
@@ -136,6 +171,21 @@ export function App() {
         if (!prefs) return;
         if (prefs.homeAirport) setHomeAirport(prefs.homeAirport);
         if (prefs.defaultTaste) setDefaultTaste(prefs.defaultTaste);
+        if (prefs.loyaltyPrograms && prefs.loyaltyPrograms.length > 0) {
+          loyaltyRef.current = prefs.loyaltyPrograms;
+          setLoyaltyPrograms(prefs.loyaltyPrograms);
+          try {
+            window.localStorage.setItem(
+              'vesper-loyalty-wallet',
+              JSON.stringify(prefs.loyaltyPrograms)
+            );
+          } catch {
+            // Ignore
+          }
+        } else if (loyaltyRef.current.length > 0) {
+          // Push guest-added loyalty entries up to Supabase upon sign-in
+          travelApi.updateProfile({ loyaltyPrograms: loyaltyRef.current }).catch(() => {});
+        }
         if (
           prefs.preferredTheme === 'twilight' ||
           prefs.preferredTheme === 'nocturne' ||
@@ -292,6 +342,7 @@ export function App() {
                 setSidebarOpen(true);
               }}
               onOpenAuth={() => setAuthModalOpen(true)}
+              onOpenProfile={() => openLoyaltyWallet('hotel')}
             />
           </motion.div>
         ) : (
@@ -312,8 +363,10 @@ export function App() {
               initialFocusMode={focusMode}
               savedDefaultTaste={defaultTaste}
               homeAirport={homeAirport}
+              loyaltyPrograms={loyaltyPrograms}
               onChangeHomeAirport={handleChangeHomeAirport}
               onSaveDefaultTaste={handleSaveDefaultTaste}
+              onOpenLoyaltyWallet={openLoyaltyWallet}
               theme={theme}
               onChangeTheme={handleThemeChange}
               onOpenSidebar={() => {
@@ -335,6 +388,7 @@ export function App() {
         isOpen={sidebarOpen}
         theme={theme}
         userProfile={userProfile}
+        loyaltyCount={loyaltyPrograms.length}
         onChangeTheme={handleThemeChange}
         onClose={() => setSidebarOpen(false)}
         currentTripTitle={currentTripTitle}
@@ -342,9 +396,25 @@ export function App() {
         onNewTrip={handleGoHome}
         onSelectTrip={handleOpenSavedTrip}
         onStartPrompt={(p) => handleStartTrip(p, undefined, initialDates, initialTravelers)}
+        onOpenProfile={() => openLoyaltyWallet('hotel')}
         onOpenAuth={() => setAuthModalOpen(true)}
         onSignOut={handleSignOut}
       />
+
+      <AnimatePresence>
+        {profileModalOpen && (
+          <ProfileSettingsModal
+            userProfile={userProfile}
+            homeAirport={homeAirport}
+            loyaltyPrograms={loyaltyPrograms}
+            initialCategory={profileModalCategory}
+            onChangeHomeAirport={handleChangeHomeAirport}
+            onSaveLoyaltyPrograms={handleSaveLoyaltyPrograms}
+            onOpenAuth={() => setAuthModalOpen(true)}
+            onClose={() => setProfileModalOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {authModalOpen && (

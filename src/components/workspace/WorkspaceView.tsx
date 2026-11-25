@@ -20,6 +20,7 @@ import {
   FlightOption,
   HotelItem,
   HotelRoom,
+  LoyaltyProgramEntry,
   PlaceItem,
   TripDayMeta,
   TripSavedItem,
@@ -47,8 +48,10 @@ interface WorkspaceViewProps {
   initialFocusMode?: 'flights' | 'stays' | 'activities';
   savedDefaultTaste?: TasteProfile | null;
   homeAirport?: string;
+  loyaltyPrograms?: LoyaltyProgramEntry[];
   onChangeHomeAirport?: (airport: string) => void;
   onSaveDefaultTaste?: (profile: TasteProfile) => void;
+  onOpenLoyaltyWallet?: (category: 'hotel' | 'airline') => void;
   theme: VesperTheme;
   onChangeTheme: (t: VesperTheme) => void;
   onOpenSidebar: () => void;
@@ -75,8 +78,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   initialFocusMode,
   savedDefaultTaste,
   homeAirport,
+  loyaltyPrograms = [],
   onChangeHomeAirport,
   onSaveDefaultTaste,
+  onOpenLoyaltyWallet,
   theme,
   onChangeTheme,
   onOpenSidebar,
@@ -287,7 +292,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     try {
       const resolvedTripId = liveTripId || (await tripCreatePromiseRef.current);
       if (resolvedTripId) {
-        const res = await travelApi.composeTrip(resolvedTripId, profile);
+        const res = await travelApi.composeTrip(resolvedTripId, {
+          ...profile,
+          loyaltyPrograms: loyaltyPrograms.length > 0 ? loyaltyPrograms : undefined,
+        });
         setActivitiesTitle(res.catalog.activitiesTitle);
         setActivities(res.catalog.activities);
         setPlaces(res.catalog.places);
@@ -1039,6 +1047,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   onChangeSubTab={setBookingsSubTab}
                   homeAirport={homeAirport}
                   onChangeHomeAirport={onChangeHomeAirport}
+                  loyaltyPrograms={loyaltyPrograms}
+                  onOpenLoyaltyWallet={onOpenLoyaltyWallet}
                   destination={destination}
                   datesLabel={datesLabel}
                   travelers={travelersLabel}
@@ -1197,6 +1207,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             datesLabel={datesLabel}
             travelers={travelersLabel}
             items={savedItems}
+            loyaltyPrograms={loyaltyPrograms}
+            onOpenLoyaltyWallet={onOpenLoyaltyWallet}
             onClose={() => setShowBookingModal(false)}
             onSuccess={() => onNotify(`Trip confirmed for ${destination}!`)}
           />

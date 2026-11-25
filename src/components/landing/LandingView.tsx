@@ -48,6 +48,7 @@ interface LandingViewProps {
   ) => void;
   onOpenSidebar: () => void;
   onOpenAuth: () => void;
+  onOpenProfile: () => void;
 }
 
 /**
@@ -64,6 +65,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
   onStartTrip,
   onOpenSidebar,
   onOpenAuth,
+  onOpenProfile,
 }) => {
   const [prompt, setPrompt] = useState('');
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
@@ -189,7 +191,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
           <ThemeSwitcher theme={theme} onChange={onChangeTheme} compact />
           <button
             type="button"
-            onClick={userProfile ? onOpenSidebar : onOpenAuth}
+            onClick={userProfile ? onOpenProfile : onOpenAuth}
+            title={userProfile ? 'Open Profile & Loyalty Wallet' : 'Sign in to Vesper'}
             className="hidden sm:flex items-center gap-2 rounded-full bg-[#0E2034] hover:bg-[#17304D] px-3 py-1.5 text-[12px] font-medium shadow-xs transition-all cursor-pointer max-w-[180px]"
           >
             {userProfile?.avatarUrl ? (

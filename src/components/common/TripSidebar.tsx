@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, MapPin, Calendar, Sparkles, LogOut, User } from 'lucide-react';
+import { X, Plus, MapPin, Calendar, Sparkles, LogOut, User, Award } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import { ThemeSwitcher, VesperTheme } from './ThemeSwitcher';
 import { TripSummary } from '../../types/travel';
@@ -9,6 +9,7 @@ interface TripSidebarProps {
   isOpen: boolean;
   theme: VesperTheme;
   userProfile?: { email: string; name?: string; avatarUrl?: string } | null;
+  loyaltyCount?: number;
   onChangeTheme: (t: VesperTheme) => void;
   onClose: () => void;
   currentTripTitle: string;
@@ -16,18 +17,20 @@ interface TripSidebarProps {
   onNewTrip: () => void;
   onSelectTrip: (tripId: string, slug?: string) => void;
   onStartPrompt: (prompt: string) => void;
+  onOpenProfile: () => void;
   onOpenAuth: () => void;
   onSignOut: () => void;
 }
 
 /**
  * Slide-out trip drawer housing saved trips, starter inspirations, Supabase Auth account
- * controls, and the Vesper theme switcher.
+ * controls, Loyalty Wallet entry point, and the Vesper theme switcher.
  */
 export const TripSidebar: React.FC<TripSidebarProps> = ({
   isOpen,
   theme,
   userProfile,
+  loyaltyCount = 0,
   onChangeTheme,
   onClose,
   currentTripTitle,
@@ -35,6 +38,7 @@ export const TripSidebar: React.FC<TripSidebarProps> = ({
   onNewTrip,
   onSelectTrip,
   onStartPrompt,
+  onOpenProfile,
   onOpenAuth,
   onSignOut,
 }) => {
@@ -163,6 +167,23 @@ export const TripSidebar: React.FC<TripSidebarProps> = ({
             </div>
 
             <div className="pt-3 border-t border-black/[0.06] space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenProfile();
+                }}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white border border-black/[0.08] hover:border-black/[0.18] text-[12.5px] font-medium text-[#14191F] transition-colors cursor-pointer"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Award className="w-4 h-4 text-[#C85A17]" />
+                  <span>Profile & Loyalty</span>
+                </span>
+                <span className="font-tabular text-[11px] px-2 py-0.5 rounded-full bg-[#F3F2EC] text-[#5A626A]">
+                  {loyaltyCount > 0 ? `${loyaltyCount} saved` : 'Add'}
+                </span>
+              </button>
+
               <div className="space-y-1.5">
                 <div className="text-[10.5px] font-semibold uppercase tracking-wider text-[#8A9097] px-1">
                   Atmosphere

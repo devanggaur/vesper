@@ -23,6 +23,7 @@ interface FlightSearchWidgetProps {
   to: string;
   dates: string;
   passengers: string;
+  preferredAirlines?: string[];
   onChangeOrigin?: (origin: string) => void;
   onAddFlights: (outbound: FlightOption, inbound: FlightOption, fare: FareClass) => void;
 }
@@ -87,6 +88,7 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
   to,
   dates,
   passengers,
+  preferredAirlines,
   onChangeOrigin,
   onAddFlights,
 }) => {
@@ -106,6 +108,8 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
 
   const adults = useMemo(() => parseAdultCount(passengers), [passengers]);
 
+  const preferredKey = (preferredAirlines || []).join(',');
+
   useEffect(() => {
     let cancelled = false;
     setIsFetchingRoute(true);
@@ -120,6 +124,7 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
         toCity: to,
         datesLabel: dates,
         adults,
+        preferredAirlines: preferredAirlines && preferredAirlines.length > 0 ? preferredAirlines : undefined,
       })
       .then((res) => {
         if (!cancelled) {
@@ -137,7 +142,8 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [originCity, to, dates, adults]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originCity, to, dates, adults, preferredKey]);
 
   const outboundFlights = flightData?.outbound || [];
   const returnFlights = flightData?.inbound || [];

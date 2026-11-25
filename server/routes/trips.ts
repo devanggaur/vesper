@@ -421,12 +421,22 @@ const composeSchema = z.object({
   vibes: z.array(z.string()).min(1),
   pace: z.enum(['Unhurried', 'Balanced', 'Packed']),
   splurge: z.enum(['Smart', 'Elevated', 'Iconic']),
+  loyaltyPrograms: z
+    .array(
+      z.object({
+        category: z.enum(['hotel', 'airline']),
+        provider: z.string(),
+        programName: z.string(),
+        tier: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 /**
  * POST /api/trips/:id/compose
  * Called when the user submits the 5-Second TasteCard:
- * 1. Gemini generates tailored section queries & editorial intros for this destination + taste.
+ * 1. Gemini generates tailored section queries & editorial intros for this destination + taste + loyalty wallet.
  * 2. Parallel cached Google Places (New) Text Searches fetch real activities, places, and boutique stays.
  * 3. Caches the full catalog on `trips.catalog` in Supabase so reloads cost $0.
  */
@@ -435,13 +445,29 @@ tripsRoutes.post('/:id/compose', async (c) => {
   const trip = await store.getTrip(id);
   if (!trip) return c.json({ error: 'Trip not found' }, 404);
 
-  const taste = composeSchema.parse(await c.req.json());
+  const parsedBody = composeSchema.parse(await c.req.json());
+  const { loyaltyPrograms: bodyLoyalty, ...taste } = parsedBody;
+
+  const authedUser = await store.verifyAccessToken(c.req.header('Authorization'));
+  const storedProfile = authedUser ? await store.getOrCreateProfile(authedUser) : null;
+  const effectiveLoyalty =
+    bodyLoyalty && bodyLoyalty.length > 0
+      ? bodyLoyalty
+      : storedProfile?.loyalty_programs || [];
+
+  const hotelPrograms = effectiveLoyalty
+    .filter((l) => l.category === 'hotel')
+    .map((l) => (l.tier ? `${l.programName} (${l.tier})` : l.programName));
+  const airlinePrograms = effectiveLoyalty
+    .filter((l) => l.category === 'airline')
+    .map((l) => (l.tier ? `${l.programName} (${l.tier})` : l.programName));
 
   const blueprint = await buildDiscoverBlueprint(
     trip.destination,
     trip.country,
     trip.dates_label,
-    taste
+    taste,
+    { hotelPrograms, airlinePrograms }
   );
 
   // Verify all Gemini-curated named venues, experiences & boutique stays in parallel
@@ -576,7 +602,6 @@ tripsRoutes.post('/:id/compose', async (c) => {
   });
 
   // Save submitted taste profile as the signed-in user's cross-trip Taste Memory
-  const authedUser = await store.verifyAccessToken(c.req.header('Authorization'));
   if (authedUser) {
     store.updateProfile(authedUser, { default_taste: taste }).catch(() => {});
   }

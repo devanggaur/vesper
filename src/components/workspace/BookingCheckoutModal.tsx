@@ -11,8 +11,10 @@ import {
   ExternalLink,
   CalendarPlus,
   Check,
+  Award,
+  Copy,
 } from 'lucide-react';
-import { TripSavedItem } from '../../types/travel';
+import { LoyaltyProgramEntry, TripSavedItem } from '../../types/travel';
 import { HandoffLinkInfo, travelApi } from '../../services/travelApi';
 import { downloadItineraryIcs } from '../../utils/time';
 import { BrandMark } from '../common/BrandMark';
@@ -23,6 +25,8 @@ interface BookingCheckoutModalProps {
   datesLabel?: string;
   travelers?: string;
   items: TripSavedItem[];
+  loyaltyPrograms?: LoyaltyProgramEntry[];
+  onOpenLoyaltyWallet?: (category: 'hotel' | 'airline') => void;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -39,12 +43,43 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
   datesLabel = 'Jun 19 – 21',
   travelers = '2 adults',
   items,
+  loyaltyPrograms = [],
+  onOpenLoyaltyWallet,
   onClose,
   onSuccess,
 }) => {
   const [handoffLinks, setHandoffLinks] = useState<Record<string, HandoffLinkInfo>>({});
   const [bookedIds, setBookedIds] = useState<Set<string>>(new Set());
+  const [copiedLoyaltyId, setCopiedLoyaltyId] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
+
+  const findLoyaltyForItem = (item: TripSavedItem): LoyaltyProgramEntry | undefined => {
+    if (item.type === 'hotel') {
+      const hotelPrograms = loyaltyPrograms.filter((p) => p.category === 'hotel');
+      const titleLower = item.title.toLowerCase();
+      return (
+        hotelPrograms.find(
+          (p) =>
+            titleLower.includes(p.provider.toLowerCase()) ||
+            (p.provider === 'Marriott' &&
+              (titleLower.includes('edition') ||
+                titleLower.includes('ritz') ||
+                titleLower.includes('st. regis') ||
+                titleLower.includes('w hotel') ||
+                titleLower.includes('suiran')))
+        ) || hotelPrograms[0]
+      );
+    }
+    if (item.type === 'flight') {
+      const airlinePrograms = loyaltyPrograms.filter((p) => p.category === 'airline');
+      const airlineLower = (item.flightDetails?.outbound.airline || item.title).toLowerCase();
+      return (
+        airlinePrograms.find((p) => airlineLower.includes(p.provider.toLowerCase())) ||
+        airlinePrograms[0]
+      );
+    }
+    return undefined;
+  };
 
   const bookableItems = items.filter((i) => i.price && i.price > 0);
   const total = bookableItems.reduce((sum, i) => sum + (i.price || 0), 0);
@@ -200,6 +235,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
                 bookableItems.map((item) => {
                   const link = getFallbackUrl(item);
                   const isMarked = bookedIds.has(item.id);
+                  const loyaltyMatch = findLoyaltyForItem(item);
                   return (
                     <div
                       key={item.id}
@@ -229,6 +265,61 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
                           ${item.price?.toLocaleString()}
                         </span>
                       </div>
+
+                      {/* 1-Tap Loyalty Copy Row for Hotels & Flights */}
+                      {(item.type === 'hotel' || item.type === 'flight') &&
+                        (loyaltyMatch ? (
+                          <div className="flex items-center justify-between gap-2 rounded-xl bg-[#FAF9F5] border border-black/[0.06] px-2.5 py-1.5 text-[11.5px]">
+                            <span className="inline-flex items-center gap-1.5 text-[#2C333A] truncate">
+                              <Award className="w-3.5 h-3.5 text-[#C85A17] shrink-0" />
+                              <span className="font-medium truncate">
+                                {loyaltyMatch.programName}
+                              </span>
+                              <span className="font-tabular text-[#7B828A]">
+                                #{loyaltyMatch.memberNumber}
+                              </span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard?.writeText(loyaltyMatch.memberNumber).catch(() => {});
+                                setCopiedLoyaltyId(item.id);
+                                window.setTimeout(
+                                  () => setCopiedLoyaltyId((c) => (c === item.id ? null : c)),
+                                  1600
+                                );
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-black/[0.09] text-[11px] font-medium text-[#14191F] hover:border-[#0E2034] cursor-pointer shrink-0"
+                            >
+                              {copiedLoyaltyId === item.id ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                  <span>Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>Copy #</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        ) : onOpenLoyaltyWallet ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onOpenLoyaltyWallet(item.type === 'hotel' ? 'hotel' : 'airline');
+                            }}
+                            className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[#5A626A] hover:text-[#14191F] cursor-pointer"
+                          >
+                            <Award className="w-3.5 h-3.5 text-[#C85A17]" />
+                            <span>
+                              Add {item.type === 'hotel' ? 'hotel loyalty' : 'frequent flyer'} # to
+                              earn points →
+                            </span>
+                          </button>
+                        ) : null)}
 
                       <div className="flex items-center justify-between gap-2 pt-2 border-t border-black/[0.06]">
                         <a

@@ -223,7 +223,8 @@ export async function buildDiscoverBlueprint(
   destination: string,
   country: string,
   datesLabel: string,
-  taste: { travelers: string; vibes: string[]; pace: string; splurge: string }
+  taste: { travelers: string; vibes: string[]; pace: string; splurge: string },
+  loyaltyContext?: { hotelPrograms: string[]; airlinePrograms: string[] }
 ): Promise<DiscoverPlanBlueprint> {
   const namedPickSchema = {
     type: 'object',
@@ -298,10 +299,15 @@ export async function buildDiscoverBlueprint(
     ],
   };
 
+  const hotelLoyaltyNote =
+    loyaltyContext && loyaltyContext.hotelPrograms.length > 0
+      ? `\nTraveler's Hotel Loyalty Programs: ${loyaltyContext.hotelPrograms.join(', ')} (Include 1–2 top-tier properties from these chains in namedHotels alongside standout independent boutiques, and mention points eligibility in whyChoose!)`
+      : '';
+
   try {
     return await runStructuredJson<DiscoverPlanBlueprint>(
-      `Destination: ${destination}${country ? `, ${country}` : ''}\nDates: ${datesLabel}\nTravelers: ${taste.travelers}\nVibes: ${taste.vibes.join(', ')}\nPace: ${taste.pace}\nSplurge style: ${taste.splurge}`,
-      'You are Vesper, an elite travel editor (Michelin Guide, Eater, Condé Nast Traveler). Return 4 distinct sections (keys: museums, contemporary, food, landmarks — tailor titles to the destination & vibes) with 3 SPECIFIC real venues each, 3 real experiences, and 4 real hotels matching the splurge style. Be crisp and punchy; never invent fake names.',
+      `Destination: ${destination}${country ? `, ${country}` : ''}\nDates: ${datesLabel}\nTravelers: ${taste.travelers}\nVibes: ${taste.vibes.join(', ')}\nPace: ${taste.pace}\nSplurge style: ${taste.splurge}${hotelLoyaltyNote}`,
+      'You are Vesper, an elite travel editor (Michelin Guide, Eater, Condé Nast Traveler). Return 4 distinct sections (keys: museums, contemporary, food, landmarks — tailor titles to the destination & vibes) with 3 SPECIFIC real venues each, 3 real experiences, and 4 real hotels matching the splurge style (respecting hotel loyalty programs when provided). Be crisp and punchy; never invent fake names.',
       schema,
       { enableSearchGrounding: true, timeoutMs: 22000 }
     );
