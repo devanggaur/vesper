@@ -227,8 +227,24 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
 
                 <div className="space-y-3 text-[14px] leading-[1.65] text-[#2C333A]">
                   <p>{place.shortDescription}</p>
-                  <p>{place.editorialSummary}</p>
+                  {place.editorialSummary && place.editorialSummary !== place.shortDescription && (
+                    <p>{place.editorialSummary}</p>
+                  )}
                 </div>
+
+                {place.details.reservationNote && (
+                  <div className="rounded-[18px] bg-[#ECEAE2] border border-black/[0.07] p-4 flex items-start gap-3">
+                    <Sparkles className="w-4 h-4 text-[#C85A17] shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#C85A17]">
+                        Vesper Insider Tip
+                      </div>
+                      <p className="text-[13px] text-[#14191F] leading-relaxed">
+                        {place.details.reservationNote}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   <div className="rounded-[18px] bg-white border border-black/[0.07] p-4 space-y-2">

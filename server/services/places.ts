@@ -165,6 +165,20 @@ export async function searchPlacesCached(
 }
 
 /**
+ * Verifies a single AI-curated venue name against Google Places API (New) (`pageSize: 1`)
+ * with 14-day Supabase caching. Returns `null` if the venue cannot be grounded as real,
+ * preventing AI hallucinations from ever appearing in Discover, Timeline, or Map.
+ */
+export async function verifyNamedPlaceCached(
+  venueName: string,
+  destination: string
+): Promise<GooglePlaceLite | null> {
+  const query = `${venueName.trim()} ${destination.trim()}`.trim();
+  const hits = await searchPlacesCached(query, 1, destination);
+  return hits[0] ?? null;
+}
+
+/**
  * Resolves a Google Places photo resource name into its direct CDN URL (`lh3.googleusercontent.com`)
  * using `skipHttpRedirect=true`, cached for 1 day so browsers load directly from Google's CDN.
  */

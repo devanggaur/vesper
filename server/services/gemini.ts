@@ -31,9 +31,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 async function runStructuredJson<T>(
   prompt: string,
   systemInstruction: string,
-  schema: Record<string, unknown>
+  schema: Record<string, unknown>,
+  options?: { enableSearchGrounding?: boolean; timeoutMs?: number }
 ): Promise<T> {
   let lastError: unknown;
+  const useSearch = Boolean(options?.enableSearchGrounding && config.geminiEnableSearchGrounding);
+  const timeoutMs = options?.timeoutMs ?? config.geminiTimeoutMs;
 
   for (const model of config.geminiModels) {
     try {
@@ -42,6 +45,7 @@ async function runStructuredJson<T>(
           model,
           system_instruction: systemInstruction,
           input: prompt,
+          ...(useSearch ? { tools: [{ type: 'google_search' }] } : {}),
           response_format: {
             type: 'text',
             mime_type: 'application/json',
@@ -49,7 +53,7 @@ async function runStructuredJson<T>(
           },
           store: false,
         }),
-        config.geminiTimeoutMs,
+        timeoutMs,
         `gemini:${model}`
       );
 
@@ -177,23 +181,43 @@ export async function parseTripPrompt(
   };
 }
 
+export interface CuratedNamedPick {
+  name: string;
+  whySpecial: string;
+  insiderTip: string;
+  bestTime: string;
+}
+
+export interface CuratedHotelPick {
+  name: string;
+  pickLabel: string;
+  whyChoose: string;
+  noiseAndRoomTip: string;
+}
+
 export interface DiscoverPlanBlueprint {
   sections: Array<{
     key: 'museums' | 'contemporary' | 'food' | 'landmarks';
     title: string;
     intro: string;
     placesQuery: string;
+    namedPicks: CuratedNamedPick[];
   }>;
   activitiesTitle: string;
   activitiesQuery: string;
+  namedExperiences: CuratedNamedPick[];
   hotelsQuery: string;
+  namedHotels: CuratedHotelPick[];
   copilotMessage: string;
   suggestions: string[];
 }
 
 /**
- * Step 2 (Called when TasteCard is submitted):
- * Generates 4 tailored Discover section queries & editorial intros for the destination + taste profile.
+ * Step 2 (Upgrade #1 — Multi-Source Insider Curation + Google Places Verification):
+ * Acts as a Michelin / Infatuation / Condé Nast Traveler editor to select SPECIFIC real,
+ * taste-matched named venues, experiences, and boutique stays (avoiding generic tourist traps)
+ * complete with `whySpecial`, `insiderTip`, and `noiseAndRoomTip`. Each named pick is then
+ * verified against Google Places API (New) for real coordinates, hours, ratings & photography.
  */
 export async function buildDiscoverBlueprint(
   destination: string,
@@ -201,40 +225,85 @@ export async function buildDiscoverBlueprint(
   datesLabel: string,
   taste: { travelers: string; vibes: string[]; pace: string; splurge: string }
 ): Promise<DiscoverPlanBlueprint> {
+  const namedPickSchema = {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'Exact real venue name on Google Maps' },
+      whySpecial: { type: 'string', description: '1 crisp insider sentence (under 20 words)' },
+      insiderTip: { type: 'string', description: '1 short practical tip (under 15 words)' },
+      bestTime: { type: 'string', description: '12-hour time like "10:00 AM" or "7:30 PM"' },
+    },
+    required: ['name', 'whySpecial', 'insiderTip', 'bestTime'],
+  };
+
   const schema = {
     type: 'object',
     properties: {
-      activitiesTitle: { type: 'string', description: 'Section heading for bookable tours/experiences, e.g. "Guided Walks & Local Experiences"' },
-      activitiesQuery: { type: 'string', description: 'Google Places Text Search query for top experiences/attractions' },
-      hotelsQuery: { type: 'string', description: 'Google Places Text Search query for stays matching splurge style' },
+      activitiesTitle: { type: 'string', description: 'Short heading for curated experiences' },
+      activitiesQuery: { type: 'string', description: 'Fallback Places query' },
+      namedExperiences: {
+        type: 'array',
+        items: namedPickSchema,
+        description: '3 specific real signature experiences/walks/cultural landmarks',
+      },
+      hotelsQuery: { type: 'string', description: 'Fallback Places query for stays' },
+      namedHotels: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Exact real hotel name' },
+            pickLabel: { type: 'string', description: '2-word badge like "Design icon", "Quiet gem"' },
+            whyChoose: { type: 'string', description: '1 crisp insider sentence (under 18 words)' },
+            noiseAndRoomTip: { type: 'string', description: '1 short room/sleep tip (under 15 words)' },
+          },
+          required: ['name', 'pickLabel', 'whyChoose', 'noiseAndRoomTip'],
+        },
+        description: '4 real acclaimed hotels matching the splurge tier',
+      },
       sections: {
         type: 'array',
         items: {
           type: 'object',
           properties: {
             key: { type: 'string', enum: ['museums', 'contemporary', 'food', 'landmarks'] },
-            title: { type: 'string', description: '2-4 word editorial section title tailored to this destination' },
-            intro: { type: 'string', description: '1-2 sentence insider recommendation intro with **bold** highlights' },
-            placesQuery: { type: 'string', description: 'Specific Google Places Text Search query returning 5-6 great places in this destination' },
+            title: { type: 'string', description: '2-3 word editorial section title' },
+            intro: { type: 'string', description: '1 insider sentence with **bold** highlights' },
+            placesQuery: { type: 'string', description: 'Fallback Places query' },
+            namedPicks: {
+              type: 'array',
+              items: namedPickSchema,
+              description: '3 specific, real, high-taste venues (no tourist traps)',
+            },
           },
-          required: ['key', 'title', 'intro', 'placesQuery'],
+          required: ['key', 'title', 'intro', 'placesQuery', 'namedPicks'],
         },
       },
-      copilotMessage: { type: 'string', description: 'Concise 2-sentence Co-Pilot confirmation explaining the curated canvas. Use **bold**.' },
+      copilotMessage: { type: 'string', description: '2 concise sentences naming 2-3 **bold** picks.' },
       suggestions: {
         type: 'array',
         items: { type: 'string' },
-        description: '3 short clickable next-step prompt suggestions tailored to this destination',
+        description: '3 short follow-up prompt pills',
       },
     },
-    required: ['activitiesTitle', 'activitiesQuery', 'hotelsQuery', 'sections', 'copilotMessage', 'suggestions'],
+    required: [
+      'activitiesTitle',
+      'activitiesQuery',
+      'namedExperiences',
+      'hotelsQuery',
+      'namedHotels',
+      'sections',
+      'copilotMessage',
+      'suggestions',
+    ],
   };
 
   try {
     return await runStructuredJson<DiscoverPlanBlueprint>(
       `Destination: ${destination}${country ? `, ${country}` : ''}\nDates: ${datesLabel}\nTravelers: ${taste.travelers}\nVibes: ${taste.vibes.join(', ')}\nPace: ${taste.pace}\nSplurge style: ${taste.splurge}`,
-      'You are Vesper, an insider travel curator. Return exactly 4 distinct sections (using keys museums, contemporary, food, landmarks — though their titles and queries should fit the destination and vibes, e.g. trails/beaches/markets/dining). Keep every query concrete so Google Places returns real, highly-rated spots.',
-      schema
+      'You are Vesper, an elite travel editor (Michelin Guide, Eater, Condé Nast Traveler). Return 4 distinct sections (keys: museums, contemporary, food, landmarks — tailor titles to the destination & vibes) with 3 SPECIFIC real venues each, 3 real experiences, and 4 real hotels matching the splurge style. Be crisp and punchy; never invent fake names.',
+      schema,
+      { enableSearchGrounding: true, timeoutMs: 22000 }
     );
   } catch (err) {
     console.warn('[gemini] buildDiscoverBlueprint using deterministic Google Places fallback:', (err as Error)?.message);
@@ -242,31 +311,37 @@ export async function buildDiscoverBlueprint(
     return {
       activitiesTitle: `Guided Walks & Local Experiences in ${destination}`,
       activitiesQuery: `best tours and experiences in ${destination}`,
+      namedExperiences: [],
       hotelsQuery: `${taste.splurge === 'Iconic' ? 'luxury boutique' : 'boutique'} hotels in ${destination}`,
+      namedHotels: [],
       sections: [
         {
           key: 'museums',
           title: 'Culture & Heritage',
           intro: `Signature cultural highlights across **${destination}** tailored around **${vibeLead}**.`,
           placesQuery: `best museums temples and cultural sights in ${destination}`,
+          namedPicks: [],
         },
         {
           key: 'contemporary',
           title: 'Design & Architecture',
           intro: `Architectural landmarks, studios, and atmospheric neighborhoods in **${destination}**.`,
           placesQuery: `famous architecture design galleries gardens in ${destination}`,
+          namedPicks: [],
         },
         {
           key: 'food',
           title: 'Memorable Dining',
           intro: `Standout local restaurants and culinary favorites in **${destination}** matching a **${taste.splurge.toLowerCase()}** style.`,
           placesQuery: `best restaurants dining in ${destination}`,
+          namedPicks: [],
         },
         {
           key: 'landmarks',
           title: 'Iconic Landmarks',
           intro: `Unmissable scenic views and historic districts to anchor your **${destination}** route.`,
           placesQuery: `top iconic landmarks scenic viewpoints in ${destination}`,
+          namedPicks: [],
         },
       ],
       copilotMessage: `Composed your **${destination}** canvas for **${taste.travelers}** around **${taste.vibes

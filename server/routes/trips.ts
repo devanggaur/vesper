@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { store } from '../services/supabase';
 import {
   buildDiscoverBlueprint,
+  CuratedHotelPick,
+  CuratedNamedPick,
   generateCoPilotTurn,
   ItineraryMutation,
   organizeStopsWithGemini,
@@ -14,6 +16,7 @@ import {
   buildPhotoProxyUrl,
   GooglePlaceLite,
   searchPlacesCached,
+  verifyNamedPlaceCached,
 } from '../services/places';
 import type {
   ActivityItem,
@@ -33,7 +36,8 @@ function toPlaceItem(
   section: PlaceItem['section'],
   destination: string,
   dayKey: string,
-  idx: number
+  idx: number,
+  curated?: CuratedNamedPick
 ): PlaceItem {
   const gallery = gp.photoNames.map((n) => buildPhotoProxyUrl(n, 900));
   const fallbackImg = gallery[0] || '';
@@ -43,6 +47,17 @@ function toPlaceItem(
       : 'Open daily · Check official hours before visiting';
   const timeDefaults = ['10:00 AM', '12:30 PM', '2:30 PM', '5:00 PM', '7:30 PM'];
 
+  const shortDesc =
+    curated?.whySpecial ||
+    gp.editorialSummary ||
+    `${gp.primaryType} in ${gp.neighborhood}, ${destination}.`;
+  const editorial = curated
+    ? `${curated.whySpecial} Insider tip: ${curated.insiderTip}`
+    : gp.editorialSummary ||
+      `Highly rated ${gp.primaryType.toLowerCase()} in ${gp.neighborhood} (${gp.rating.toFixed(
+        1
+      )}★ from ${gp.reviews.toLocaleString()} reviews). Located at ${gp.formattedAddress}.`;
+
   return {
     id: `gp-${gp.id}`,
     name: gp.name,
@@ -51,13 +66,8 @@ function toPlaceItem(
     rating: gp.rating,
     reviews: gp.reviews,
     priceTier: gp.priceTier,
-    shortDescription:
-      gp.editorialSummary || `${gp.primaryType} in ${gp.neighborhood}, ${destination}.`,
-    editorialSummary:
-      gp.editorialSummary ||
-      `Highly rated ${gp.primaryType.toLowerCase()} in ${gp.neighborhood} (${gp.rating.toFixed(
-        1
-      )}★ from ${gp.reviews.toLocaleString()} reviews). Located at ${gp.formattedAddress}.`,
+    shortDescription: shortDesc,
+    editorialSummary: editorial,
     image: fallbackImg,
     gallery: gallery.length > 0 ? gallery : [fallbackImg],
     photoCredit: 'Google Places',
@@ -67,16 +77,28 @@ function toPlaceItem(
       goodForChildren: section !== 'food',
       restroom: true,
       accessibility: 'Check venue entry details on official site',
+      reservationNote: curated?.insiderTip,
     },
     website: gp.website || `https://www.google.com/maps/place/?q=place_id:${gp.id}`,
     phone: gp.phone || 'See website',
     neighborhood: gp.neighborhood,
     suggestedDay: dayKey,
-    suggestedTime: section === 'food' ? (idx % 2 === 0 ? '1:30 PM' : '7:30 PM') : timeDefaults[idx % timeDefaults.length],
+    suggestedTime:
+      curated?.bestTime ||
+      (section === 'food'
+        ? idx % 2 === 0
+          ? '1:30 PM'
+          : '7:30 PM'
+        : timeDefaults[idx % timeDefaults.length]),
   };
 }
 
-function toActivityItem(gp: GooglePlaceLite, destination: string, idx: number): ActivityItem {
+function toActivityItem(
+  gp: GooglePlaceLite,
+  destination: string,
+  idx: number,
+  curated?: CuratedNamedPick
+): ActivityItem {
   const gallery = gp.photoNames.map((n) => buildPhotoProxyUrl(n, 900));
   const basePrice = 38 + (idx % 4) * 18;
 
@@ -88,31 +110,43 @@ function toActivityItem(gp: GooglePlaceLite, destination: string, idx: number): 
     reviews: gp.reviews,
     duration: idx % 2 === 0 ? '2.5 hours' : '3 hours',
     pricePerPerson: basePrice,
-    tagline: gp.editorialSummary || `Top-rated ${gp.primaryType.toLowerCase()} experience in ${gp.neighborhood}.`,
-    description: gp.editorialSummary || `Explore ${gp.name} in ${gp.neighborhood}, ${destination}.`,
+    tagline:
+      curated?.whySpecial ||
+      gp.editorialSummary ||
+      `Top-rated ${gp.primaryType.toLowerCase()} experience in ${gp.neighborhood}.`,
+    description:
+      curated?.whySpecial ||
+      gp.editorialSummary ||
+      `Explore ${gp.name} in ${gp.neighborhood}, ${destination}.`,
     aboutHeading: `Experience ${gp.name}`,
     aboutBody: [
-      gp.editorialSummary ||
+      curated?.whySpecial ||
+        gp.editorialSummary ||
         `Discover one of ${destination}’s highest-rated highlights in ${gp.neighborhood}, backed by ${gp.reviews.toLocaleString()} traveler reviews.`,
-      `Address: ${gp.formattedAddress}.`,
+      curated?.insiderTip ? `Insider tip: ${curated.insiderTip}` : `Address: ${gp.formattedAddress}.`,
     ],
     highlights: [
       `Located in ${gp.neighborhood}, ${destination}`,
       `Rated ${gp.rating.toFixed(1)}★ by ${gp.reviews.toLocaleString()} travelers`,
-      'Instant timeline scheduling with live neighborhood transit estimates',
+      curated?.insiderTip || 'Instant timeline scheduling with live street transit estimates',
     ],
     image: gallery[0] || '',
     gallery: gallery.length > 0 ? gallery : [''],
     coords: { lat: gp.lat, lng: gp.lng },
     slots: [
-      { id: `${gp.id}-am`, time: '9:30 AM', endTime: '12:00 PM', spotsLeft: 6, pricePerPerson: basePrice },
+      { id: `${gp.id}-am`, time: curated?.bestTime || '9:30 AM', endTime: '12:00 PM', spotsLeft: 6, pricePerPerson: basePrice },
       { id: `${gp.id}-pm`, time: '2:00 PM', endTime: '4:30 PM', spotsLeft: 4, pricePerPerson: basePrice + 6 },
     ],
     category: gp.primaryType,
   };
 }
 
-function toHotelItem(gp: GooglePlaceLite, destination: string, idx: number): HotelItem {
+function toHotelItem(
+  gp: GooglePlaceLite,
+  destination: string,
+  idx: number,
+  curated?: CuratedHotelPick
+): HotelItem {
   const gallery = gp.photoNames.map((n) => buildPhotoProxyUrl(n, 900));
   const tierMultiplier = gp.priceTier === '$$$$' ? 2.1 : gp.priceTier === '$$$' ? 1.55 : 1.05;
   const twoNightTotal = Math.round((340 * tierMultiplier + idx * 34) / 5) * 5;
@@ -127,12 +161,14 @@ function toHotelItem(gp: GooglePlaceLite, destination: string, idx: number): Hot
     reviews: gp.reviews,
     stars: gp.priceTier === '$$$$' ? 5 : 4,
     priceTotal: twoNightTotal,
-    tagline: gp.editorialSummary || `${gp.neighborhood} · Rated ${gp.rating.toFixed(1)}★`,
+    tagline: curated?.whyChoose || gp.editorialSummary || `${gp.neighborhood} · Rated ${gp.rating.toFixed(1)}★`,
     shortDescription:
+      curated?.whyChoose ||
       gp.editorialSummary ||
       `Well-reviewed stay in ${gp.neighborhood}, ${destination} with easy access to your daily route.`,
-    pickLabel: pickLabels[idx % pickLabels.length],
+    pickLabel: curated?.pickLabel || pickLabels[idx % pickLabels.length],
     whyChoose:
+      curated?.whyChoose ||
       gp.editorialSummary ||
       `Strong ${gp.rating.toFixed(1)}★ guest rating (${gp.reviews.toLocaleString()} reviews) in ${gp.neighborhood}, well positioned for your itinerary.`,
     image: gallery[0] || '',
@@ -141,8 +177,8 @@ function toHotelItem(gp: GooglePlaceLite, destination: string, idx: number): Hot
     highlights: [
       { icon: 'map', title: `Prime ${gp.neighborhood} base`, description: gp.formattedAddress },
       { icon: 'sparkle', title: `${scoreTen.toFixed(1)}/10 traveler score`, description: `Based on ${gp.reviews.toLocaleString()} verified guest reviews.` },
-      { icon: 'bed', title: 'Thoughtful rooms & suites', description: 'Flexible cancellation rates available.' },
-      { icon: 'tree', title: 'Curated by Vesper', description: `Short transit distance to top ${destination} stops.` },
+      { icon: 'bed', title: curated?.pickLabel || 'Thoughtful rooms & suites', description: curated?.whyChoose || 'Flexible cancellation rates available.' },
+      { icon: 'tree', title: 'Sleep & room tip', description: curated?.noiseAndRoomTip || `Short transit distance to top ${destination} stops.` },
     ],
     rooms: [
       {
@@ -194,7 +230,7 @@ function toHotelItem(gp: GooglePlaceLite, destination: string, idx: number): Hot
         items: [
           {
             heading: 'Address & neighborhood access',
-            body: `${gp.formattedAddress}. Convenient jumping-off point for your ${destination} itinerary.`,
+            body: `${gp.formattedAddress}. ${curated?.whyChoose || `Convenient jumping-off point for your ${destination} itinerary.`}`,
           },
         ],
       },
@@ -204,8 +240,10 @@ function toHotelItem(gp: GooglePlaceLite, destination: string, idx: number): Hot
         title: 'Noise & Sleep Quality',
         items: [
           {
-            heading: 'Room request tip',
-            body: `Ask ${gp.name} for an upper-floor or interior courtyard room when booking if you prefer extra-quiet nights.`,
+            heading: 'Insider room request tip',
+            body:
+              curated?.noiseAndRoomTip ||
+              `Ask ${gp.name} for an upper-floor or interior courtyard room when booking if you prefer extra-quiet nights.`,
           },
         ],
       },
@@ -406,23 +444,63 @@ tripsRoutes.post('/:id/compose', async (c) => {
     taste
   );
 
-  // Run Google Places Text Searches in parallel (all 14-day cached in Supabase `place_cache`)
-  const [rawActivities, rawHotels, ...rawSections] = await Promise.all([
-    searchPlacesCached(blueprint.activitiesQuery, 5, trip.destination),
-    searchPlacesCached(blueprint.hotelsQuery, 6, trip.destination),
-    ...blueprint.sections.map((sec) => searchPlacesCached(sec.placesQuery, 6, trip.destination)),
+  // Verify all Gemini-curated named venues, experiences & boutique stays in parallel
+  // against Google Places API (New) via our 14-day Supabase `place_cache`.
+  // Any pick Google Places cannot verify is dropped; thin sections backfill automatically.
+  const [verifiedExperiences, verifiedHotels, verifiedSections] = await Promise.all([
+    blueprint.namedExperiences.length > 0
+      ? Promise.all(
+          blueprint.namedExperiences.slice(0, 4).map(async (pick) => ({
+            pick,
+            gp: await verifyNamedPlaceCached(pick.name, trip.destination),
+          }))
+        )
+      : Promise.resolve([]),
+    blueprint.namedHotels.length > 0
+      ? Promise.all(
+          blueprint.namedHotels.slice(0, 5).map(async (pick) => ({
+            pick,
+            gp: await verifyNamedPlaceCached(pick.name, trip.destination),
+          }))
+        )
+      : Promise.resolve([]),
+    Promise.all(
+      blueprint.sections.map(async (sec) => {
+        const namedHits = await Promise.all(
+          (sec.namedPicks || []).slice(0, 4).map(async (pick) => ({
+            pick,
+            gp: await verifyNamedPlaceCached(pick.name, trip.destination),
+          }))
+        );
+        const validNamed = namedHits.filter(
+          (h): h is { pick: CuratedNamedPick; gp: GooglePlaceLite } => h.gp !== null
+        );
+        // Backfill with Places search if fewer than 3 named venues verified
+        const backfill =
+          validNamed.length < 3
+            ? await searchPlacesCached(sec.placesQuery, 5, trip.destination)
+            : [];
+        return { sec, validNamed, backfill };
+      })
+    ),
   ]);
 
   const seenPlaceIds = new Set<string>();
-  const discoverSections: DiscoverSection[] = blueprint.sections.map((sec, sIdx) => {
+  const discoverSections: DiscoverSection[] = verifiedSections.map(({ sec, validNamed, backfill }, sIdx) => {
     const dayKey = trip.day_labels[sIdx % trip.day_labels.length]?.key || 'Day 1';
-    const rawList = rawSections[sIdx] || [];
     const places: PlaceItem[] = [];
-    for (const gp of rawList) {
+
+    for (const { pick, gp } of validNamed) {
       if (seenPlaceIds.has(gp.id)) continue;
+      seenPlaceIds.add(gp.id);
+      places.push(toPlaceItem(gp, sec.key, trip.destination, dayKey, places.length, pick));
+    }
+    for (const gp of backfill) {
+      if (seenPlaceIds.has(gp.id) || places.length >= 5) continue;
       seenPlaceIds.add(gp.id);
       places.push(toPlaceItem(gp, sec.key, trip.destination, dayKey, places.length));
     }
+
     return {
       key: sec.key,
       title: sec.title,
@@ -431,13 +509,45 @@ tripsRoutes.post('/:id/compose', async (c) => {
     };
   });
 
+  // Experiences: verified named picks + backfill if < 3 verified
+  const validExp = verifiedExperiences.filter(
+    (h): h is { pick: CuratedNamedPick; gp: GooglePlaceLite } => h.gp !== null
+  );
+  const expBackfill =
+    validExp.length < 3 ? await searchPlacesCached(blueprint.activitiesQuery, 5, trip.destination) : [];
+  const seenActIds = new Set<string>();
+  const activities: ActivityItem[] = [];
+  for (const { pick, gp } of validExp) {
+    if (seenActIds.has(gp.id)) continue;
+    seenActIds.add(gp.id);
+    activities.push(toActivityItem(gp, trip.destination, activities.length, pick));
+  }
+  for (const gp of expBackfill) {
+    if (seenActIds.has(gp.id) || activities.length >= 5) continue;
+    seenActIds.add(gp.id);
+    activities.push(toActivityItem(gp, trip.destination, activities.length));
+  }
+
+  // Boutique Hotels: verified named picks + backfill if < 4 verified
+  const validHotels = verifiedHotels.filter(
+    (h): h is { pick: CuratedHotelPick; gp: GooglePlaceLite } => h.gp !== null
+  );
+  const hotelBackfill =
+    validHotels.length < 4 ? await searchPlacesCached(blueprint.hotelsQuery, 6, trip.destination) : [];
+  const seenHotelIds = new Set<string>();
+  const hotels: HotelItem[] = [];
+  for (const { pick, gp } of validHotels) {
+    if (seenHotelIds.has(gp.id)) continue;
+    seenHotelIds.add(gp.id);
+    hotels.push(toHotelItem(gp, trip.destination, hotels.length, pick));
+  }
+  for (const gp of hotelBackfill) {
+    if (seenHotelIds.has(gp.id) || hotels.length >= 6) continue;
+    seenHotelIds.add(gp.id);
+    hotels.push(toHotelItem(gp, trip.destination, hotels.length));
+  }
+
   const allPlaces = discoverSections.flatMap((s) => s.places);
-  const activities: ActivityItem[] = rawActivities.map((gp, idx) =>
-    toActivityItem(gp, trip.destination, idx)
-  );
-  const hotels: HotelItem[] = rawHotels.map((gp, idx) =>
-    toHotelItem(gp, trip.destination, idx)
-  );
 
   // Refine map center to the mean of discovered places if available
   let center = { lat: trip.center_lat, lng: trip.center_lng };

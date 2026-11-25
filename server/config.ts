@@ -24,7 +24,12 @@ export const config = {
     'gemini-4-hydrogen',
   ] as const,
   /** Per-attempt timeout (ms) before failing over to next model */
-  geminiTimeoutMs: 12000,
+  geminiTimeoutMs: 14000,
+  /**
+   * Enable live Google Search grounding on Discover curation (requires Paid-tier Gemini quota;
+   * free-tier keys have 0 search-grounding quota and gracefully use Gemini's curated knowledge).
+   */
+  geminiEnableSearchGrounding: process.env.GEMINI_ENABLE_SEARCH_GROUNDING === 'true',
 };
 
 export function assertConfig(): void {
