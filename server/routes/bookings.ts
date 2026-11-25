@@ -6,6 +6,7 @@ import {
   buildGoogleHotelsUrl,
   searchFlightsForRoute,
 } from '../services/bookings';
+import { searchViatorOffersCached } from '../services/viator';
 
 export const bookingsRoutes = new Hono();
 
@@ -96,4 +97,21 @@ bookingsRoutes.post('/handoff-links', async (c) => {
   }
 
   return c.json({ links });
+});
+
+const ticketOffersSchema = z.object({
+  venueName: z.string().min(1),
+  destination: z.string().default(''),
+  limit: z.number().int().min(1).max(6).default(3),
+});
+
+/**
+ * POST /api/bookings/ticket-offers
+ * Queries Viator Partner API v2 (using server-only `VIATOR_API_KEY`, cached 12h) for live
+ * ticket prices & direct affiliate product URLs, gracefully returning `[]` if unavailable.
+ */
+bookingsRoutes.post('/ticket-offers', async (c) => {
+  const body = ticketOffersSchema.parse(await c.req.json());
+  const offers = await searchViatorOffersCached(body.venueName, body.destination, body.limit);
+  return c.json({ offers });
 });

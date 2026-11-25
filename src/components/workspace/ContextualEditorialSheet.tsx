@@ -355,6 +355,17 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
                         <span>{bookingLinks.partner.label}</span>
                         <ExternalLink className="w-3 h-3 text-[#C85A17]" />
                       </a>
+                      {bookingLinks.altPartner && (
+                        <a
+                          href={bookingLinks.altPartner.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#FAF9F5] hover:bg-[#ECEAE2] border border-black/[0.1] text-[12px] font-medium text-[#14191F] transition-colors"
+                        >
+                          <span>{bookingLinks.altPartner.label}</span>
+                          <ExternalLink className="w-3 h-3 text-[#C85A17]" />
+                        </a>
+                      )}
                     </div>
                   ) : (
                     <div className="text-[12px] text-emerald-700 bg-emerald-50/70 border border-emerald-200/70 rounded-xl px-3 py-2">
@@ -626,6 +637,17 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
                         <span>{actLinks.partner.label}</span>
                         <ExternalLink className="w-3 h-3 text-[#C85A17]" />
                       </a>
+                      {actLinks.altPartner && (
+                        <a
+                          href={actLinks.altPartner.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAF9F5] hover:bg-[#ECEAE2] border border-black/[0.1] text-[12px] font-medium text-[#14191F] transition-colors"
+                        >
+                          <span>{actLinks.altPartner.label}</span>
+                          <ExternalLink className="w-3 h-3 text-[#C85A17]" />
+                        </a>
+                      )}
                     </div>
                   </div>
                 </div>

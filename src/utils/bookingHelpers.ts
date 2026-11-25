@@ -259,11 +259,13 @@ export function analyzeTripHoursAvailability(
 export interface VenueBookingLinks {
   official: { label: string; url: string } | null;
   partner: { label: string; url: string; partnerName: string };
+  altPartner?: { label: string; url: string; partnerName: string } | null;
 }
 
 /**
- * Builds clean dual handoff links (Official Box Office + Affiliate Partner search)
- * so travelers always have face-value direct tickets AND instant skip-the-line / tour options.
+ * Builds clean dual/triple handoff links (Official Box Office + Viator / GetYourGuide
+ * Affiliate Partner links) so travelers always have face-value direct tickets AND instant
+ * skip-the-line / tour options across your configured partner accounts.
  */
 export function buildVenueBookingLinks(params: {
   title: string;
@@ -297,35 +299,40 @@ export function buildVenueBookingLinks(params: {
         url: `https://www.google.com/search?q=${encodeURIComponent(`${cleanQuery} reservation OpenTable Resy`)}`,
         partnerName: 'Dining Reservations',
       },
-    };
-  }
-
-  if (viatorPid) {
-    return {
-      official,
-      partner: {
-        label:
-          bookingType === 'guided_tour'
-            ? 'Check tour availability on Viator'
-            : 'Skip-the-line & tours on Viator',
-        url: `https://www.viator.com/searchResults/all?text=${encodeURIComponent(cleanQuery)}&pid=${encodeURIComponent(viatorPid)}`,
-        partnerName: 'Viator',
-      },
+      altPartner: null,
     };
   }
 
   const gygParams = new URLSearchParams({ q: cleanQuery });
   if (gygPartnerId) gygParams.set('partner_id', gygPartnerId);
+  const gygLink = {
+    label:
+      bookingType === 'guided_tour'
+        ? 'Check availability on GetYourGuide'
+        : 'Skip-the-line (GetYourGuide)',
+    url: `https://www.getyourguide.com/s/?${gygParams.toString()}`,
+    partnerName: 'GetYourGuide',
+  };
+
+  if (viatorPid) {
+    const viatorLink = {
+      label:
+        bookingType === 'guided_tour'
+          ? 'Check tour availability on Viator'
+          : 'Skip-the-line & tours on Viator',
+      url: `https://www.viator.com/searchResults/all?text=${encodeURIComponent(cleanQuery)}&pid=${encodeURIComponent(viatorPid)}`,
+      partnerName: 'Viator',
+    };
+    return {
+      official,
+      partner: viatorLink,
+      altPartner: gygPartnerId ? gygLink : null,
+    };
+  }
 
   return {
     official,
-    partner: {
-      label:
-        bookingType === 'guided_tour'
-          ? 'Check availability on GetYourGuide'
-          : 'Skip-the-line & tours (GetYourGuide)',
-      url: `https://www.getyourguide.com/s/?${gygParams.toString()}`,
-      partnerName: 'GetYourGuide',
-    },
+    partner: gygLink,
+    altPartner: null,
   };
 }

@@ -31,3 +31,13 @@ services:
         sync: false
       - key: AMADEUS_CLIENT_SECRET
         sync: false
+      - key: GYG_PARTNER_ID
+        sync: false
+      - key: VIATOR_PARTNER_ID
+        sync: false
+      - key: VIATOR_API_KEY
+        sync: false
+      - key: VITE_GYG_PARTNER_ID
+        sync: false
+      - key: VITE_VIATOR_PARTNER_ID
+        sync: false
