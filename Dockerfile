@@ -3,7 +3,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install --include=dev
 
 COPY . .
 
@@ -25,7 +25,7 @@ ENV NODE_ENV=production
 ENV PORT=8787
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --include=dev --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
