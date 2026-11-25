@@ -26,9 +26,29 @@ import {
   ChevronLeft,
   ChevronRight,
   MessageSquare,
+  Ticket,
+  ExternalLink,
+  AlertTriangle,
+  CheckCircle2,
+  CalendarCheck,
 } from 'lucide-react';
-import { ActivityItem, HotelItem, HotelRoom, PlaceItem, TripDayMeta } from '../../types/travel';
+import {
+  ActivityItem,
+  BookingStatus,
+  HotelItem,
+  HotelRoom,
+  PlaceItem,
+  TripDayMeta,
+  TripSavedItem,
+} from '../../types/travel';
 import { DEFAULT_CDMX_DAYS } from '../../services/travelApi';
+import {
+  analyzeTripHoursAvailability,
+  buildVenueBookingLinks,
+  getBookingTypeMeta,
+  inferActivityBookingType,
+  inferPlaceBookingType,
+} from '../../utils/bookingHelpers';
 import { SmartImage } from '../common/SmartImage';
 
 /**
@@ -42,7 +62,9 @@ export type EditorialSheetTarget =
 interface ContextualEditorialSheetProps {
   target: EditorialSheetTarget;
   destination?: string;
+  datesLabel?: string;
   days?: TripDayMeta[];
+  savedItem?: TripSavedItem | null;
   isPlaceSaved: boolean;
   isLiked: boolean;
   onClose: () => void;
@@ -50,6 +72,7 @@ interface ContextualEditorialSheetProps {
   onToggleSavePlace: (place: PlaceItem) => void;
   onAddActivity: (activity: ActivityItem, day: string, time: string, endTime: string, guests: number, total: number) => void;
   onAddHotel: (hotel: HotelItem, room: HotelRoom, price: number) => void;
+  onUpdateBookingStatus?: (itemId: string, status: BookingStatus, confirmationCode?: string) => void;
   onAskVesper: (question: string) => void;
   onNotify: (msg: string) => void;
 }
@@ -74,7 +97,9 @@ const HighlightIcon: React.FC<{ icon: HotelItem['highlights'][0]['icon'] }> = ({
 export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> = ({
   target,
   destination = 'Mexico City',
+  datesLabel,
   days = DEFAULT_CDMX_DAYS,
+  savedItem,
   isPlaceSaved,
   isLiked,
   onClose,
@@ -82,6 +107,7 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
   onToggleSavePlace,
   onAddActivity,
   onAddHotel,
+  onUpdateBookingStatus,
   onAskVesper,
   onNotify,
 }) => {
@@ -186,6 +212,22 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
           {/* ── PLACE DOSSIER ──────────────────────────────────────────── */}
           {target.kind === 'place' && (() => {
             const place = target.item;
+            const bookingType = inferPlaceBookingType(place);
+            const badge = getBookingTypeMeta(bookingType);
+            const hoursReport = analyzeTripHoursAvailability(
+              place.hours.weekdayDescriptions,
+              days,
+              place.hours.closedDay
+            );
+            const bookingLinks = buildVenueBookingLinks({
+              title: place.name,
+              destination,
+              bookingType,
+              officialUrl: place.website,
+              datesLabel,
+            });
+            const isMarkedBooked = savedItem?.bookingMeta?.status === 'booked';
+
             return (
               <>
                 <div className="relative h-[240px] sm:h-[290px] rounded-[20px] overflow-hidden">
@@ -205,8 +247,27 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
                 </div>
 
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#C85A17]">
-                    {place.neighborhood} · {place.category}
+                  <div className="flex items-center flex-wrap gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#C85A17]">
+                      {place.neighborhood} · {place.category}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                        bookingType === 'walk_in'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
+                          : bookingType === 'timed_ticket'
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                          : bookingType === 'reservation'
+                          ? 'bg-[#ECEAE2] text-[#14191F] border border-black/[0.08]'
+                          : 'bg-orange-50 text-[#C85A17] border border-orange-200'
+                      }`}
+                    >
+                      <Ticket className="w-3 h-3" />
+                      <span>{badge.label}</span>
+                      {place.estimatedCostUsd && place.estimatedCostUsd > 0 ? (
+                        <span className="font-tabular">· ~${place.estimatedCostUsd}</span>
+                      ) : null}
+                    </span>
                   </div>
                   <h2 className="font-editorial text-[30px] sm:text-[34px] font-normal text-[#14191F] leading-tight mt-0.5">
                     {place.name}
@@ -223,6 +284,83 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
                       </>
                     )}
                   </div>
+                </div>
+
+                {/* Tickets / Reservations & Trip-Date Hours Availability Panel */}
+                <div className="rounded-[20px] bg-white border border-black/[0.08] p-4 space-y-3 shadow-2xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      {hoursReport.hasClosureConflict ? (
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      ) : (
+                        <CalendarCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      )}
+                      <div>
+                        <div
+                          className={`text-[13px] font-semibold ${
+                            hoursReport.hasClosureConflict ? 'text-amber-800' : 'text-[#14191F]'
+                          }`}
+                        >
+                          {hoursReport.headline}
+                        </div>
+                        <div className="text-[12px] text-[#5A626A] mt-0.5">
+                          {hoursReport.detail}
+                          {place.advanceLeadTime ? ` · ${place.advanceLeadTime}` : ''}
+                        </div>
+                      </div>
+                    </div>
+
+                    {savedItem && badge.needsBooking && onUpdateBookingStatus && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdateBookingStatus(
+                            savedItem.id,
+                            isMarkedBooked ? 'needed' : 'booked',
+                            savedItem.bookingMeta?.confirmationCode
+                          )
+                        }
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11.5px] font-semibold border transition-colors cursor-pointer shrink-0 ${
+                          isMarkedBooked
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                            : 'bg-[#FAF9F5] text-[#2C333A] border-black/[0.1] hover:border-[#0E2034]'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{isMarkedBooked ? 'Confirmed' : 'Mark booked'}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {badge.needsBooking ? (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {bookingLinks.official && (
+                        <a
+                          href={bookingLinks.official.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[12px] font-medium transition-colors"
+                          style={{ color: '#FFFFFF' }}
+                        >
+                          <span>{bookingLinks.official.label}</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                      <a
+                        href={bookingLinks.partner.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#FAF9F5] hover:bg-[#ECEAE2] border border-black/[0.1] text-[12px] font-medium text-[#14191F] transition-colors"
+                      >
+                        <span>{bookingLinks.partner.label}</span>
+                        <ExternalLink className="w-3 h-3 text-[#C85A17]" />
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="text-[12px] text-emerald-700 bg-emerald-50/70 border border-emerald-200/70 rounded-xl px-3 py-2">
+                      No advance ticket required — add it straight to your timeline at the ideal time.
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3 text-[14px] leading-[1.65] text-[#2C333A]">
@@ -305,6 +443,15 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
             const act = target.item;
             const activeSlot = act.slots.find((s) => s.id === selectedSlotId) || act.slots[0];
             const subtotal = activeSlot ? activeSlot.pricePerPerson * actGuests : 0;
+            const actBookingType = inferActivityBookingType(act);
+            const actHours = analyzeTripHoursAvailability(act.weekdayDescriptions, days);
+            const actLinks = buildVenueBookingLinks({
+              title: act.title,
+              destination,
+              bookingType: actBookingType,
+              officialUrl: act.website,
+              datesLabel,
+            });
 
             return (
               <>
@@ -439,11 +586,48 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
                       </>
                     ) : (
                       <>
-                        <span>Add to trip · ${subtotal + 1}</span>
+                        <span>Add to timeline · est. ${subtotal}</span>
                         <Plus className="w-4 h-4" />
                       </>
                     )}
                   </button>
+
+                  {/* Live Partner Availability & Official Box Office Links */}
+                  <div className="pt-2 border-t border-black/[0.06] space-y-2.5">
+                    <div className="flex items-start gap-2 text-[12px] text-[#5A626A]">
+                      {actHours.hasClosureConflict ? (
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      ) : (
+                        <CalendarCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                      )}
+                      <span>
+                        <strong className="text-[#14191F]">{actHours.headline}</strong>
+                        {act.advanceLeadTime ? ` · ${act.advanceLeadTime}` : ''}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {actLinks.official && (
+                        <a
+                          href={actLinks.official.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAF9F5] hover:bg-[#ECEAE2] border border-black/[0.1] text-[12px] font-medium text-[#14191F] transition-colors"
+                        >
+                          <span>{actLinks.official.label}</span>
+                          <ExternalLink className="w-3 h-3 text-[#C85A17]" />
+                        </a>
+                      )}
+                      <a
+                        href={actLinks.partner.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAF9F5] hover:bg-[#ECEAE2] border border-black/[0.1] text-[12px] font-medium text-[#14191F] transition-colors"
+                      >
+                        <span>{actLinks.partner.label}</span>
+                        <ExternalLink className="w-3 h-3 text-[#C85A17]" />
+                      </a>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Highlights & About */}

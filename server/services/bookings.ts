@@ -68,9 +68,43 @@ export function buildGoogleHotelsUrl(hotelName: string, destination: string, dat
   return `https://www.google.com/travel/hotels?q=${encodeURIComponent(q)}`;
 }
 
-export function buildActivityBookingUrl(activityTitle: string, destination: string): string {
-  const q = `${activityTitle} ${destination} tickets`;
-  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+export function buildActivityBookingUrl(
+  activityTitle: string,
+  destination: string,
+  bookingType: 'walk_in' | 'timed_ticket' | 'guided_tour' | 'reservation' = 'guided_tour'
+): { label: string; url: string; partnerName: string } {
+  const query = `${activityTitle} ${destination}`.trim();
+
+  if (bookingType === 'reservation') {
+    return {
+      label: 'Find table on OpenTable / Resy',
+      url: `https://www.google.com/search?q=${encodeURIComponent(`${query} reservation OpenTable Resy`)}`,
+      partnerName: 'Dining Reservations',
+    };
+  }
+
+  if (config.viatorPartnerId) {
+    return {
+      label:
+        bookingType === 'guided_tour'
+          ? 'Check tour availability on Viator'
+          : 'Skip-the-line & tours on Viator',
+      url: `https://www.viator.com/searchResults/all?text=${encodeURIComponent(query)}&pid=${encodeURIComponent(config.viatorPartnerId)}`,
+      partnerName: 'Viator',
+    };
+  }
+
+  const gygParams = new URLSearchParams({ q: query });
+  if (config.gygPartnerId) gygParams.set('partner_id', config.gygPartnerId);
+
+  return {
+    label:
+      bookingType === 'guided_tour'
+        ? 'Check availability on GetYourGuide'
+        : 'Skip-the-line & tours (GetYourGuide)',
+    url: `https://www.getyourguide.com/s/?${gygParams.toString()}`,
+    partnerName: 'GetYourGuide',
+  };
 }
 
 /** Well-known city -> IATA lookup for instant zero-latency fallback */

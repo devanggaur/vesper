@@ -58,6 +58,28 @@ function toPlaceItem(
         1
       )}★ from ${gp.reviews.toLocaleString()} reviews). Located at ${gp.formattedAddress}.`;
 
+  const closedDays = (gp.weekdayDescriptions || [])
+    .filter((line) => /closed/i.test(line))
+    .map((line) => line.split(':')[0]?.trim())
+    .filter(Boolean);
+
+  const inferredBookingType: PlaceItem['bookingType'] =
+    curated?.bookingType ||
+    (section === 'food'
+      ? /cafe|café|coffee|bakery|pastel|pastry|market/i.test(`${gp.name} ${gp.primaryType}`)
+        ? 'walk_in'
+        : 'reservation'
+      : section === 'museums' || /museum|palace|castle|monastery|cathedral|gallery|tower/i.test(`${gp.name} ${gp.primaryType}`)
+      ? 'timed_ticket'
+      : 'walk_in');
+
+  const estimatedCostUsd =
+    typeof curated?.estimatedCostUsd === 'number'
+      ? curated.estimatedCostUsd
+      : inferredBookingType === 'timed_ticket'
+      ? 18
+      : 0;
+
   return {
     id: `gp-${gp.id}`,
     name: gp.name,
@@ -72,7 +94,11 @@ function toPlaceItem(
     gallery: gallery.length > 0 ? gallery : [fallbackImg],
     photoCredit: 'Google Places',
     coords: { lat: gp.lat, lng: gp.lng },
-    hours: { openSchedule: defaultHours },
+    hours: {
+      closedDay: closedDays.length > 0 ? closedDays.join(', ') : undefined,
+      openSchedule: defaultHours,
+      weekdayDescriptions: gp.weekdayDescriptions,
+    },
     details: {
       goodForChildren: section !== 'food',
       restroom: true,
@@ -90,6 +116,15 @@ function toPlaceItem(
           ? '1:30 PM'
           : '7:30 PM'
         : timeDefaults[idx % timeDefaults.length]),
+    bookingType: inferredBookingType,
+    advanceLeadTime:
+      curated?.advanceLeadTime ||
+      (inferredBookingType === 'walk_in'
+        ? 'No booking needed'
+        : inferredBookingType === 'reservation'
+        ? 'Reserve 1–2 weeks ahead'
+        : 'Book timed tickets ahead'),
+    estimatedCostUsd,
   };
 }
 
@@ -100,7 +135,11 @@ function toActivityItem(
   curated?: CuratedNamedPick
 ): ActivityItem {
   const gallery = gp.photoNames.map((n) => buildPhotoProxyUrl(n, 900));
-  const basePrice = 38 + (idx % 4) * 18;
+  const basePrice =
+    typeof curated?.estimatedCostUsd === 'number' && curated.estimatedCostUsd > 0
+      ? Math.round(curated.estimatedCostUsd)
+      : 38 + (idx % 4) * 18;
+  const bookingType = curated?.bookingType || 'guided_tour';
 
   return {
     id: `act-${gp.id}`,
@@ -138,6 +177,12 @@ function toActivityItem(
       { id: `${gp.id}-pm`, time: '2:00 PM', endTime: '4:30 PM', spotsLeft: 4, pricePerPerson: basePrice + 6 },
     ],
     category: gp.primaryType,
+    bookingType,
+    advanceLeadTime:
+      curated?.advanceLeadTime ||
+      (bookingType === 'walk_in' ? 'No booking needed' : 'Book 1–2 weeks ahead'),
+    website: gp.website || `https://www.google.com/maps/place/?q=place_id:${gp.id}`,
+    weekdayDescriptions: gp.weekdayDescriptions,
   };
 }
 

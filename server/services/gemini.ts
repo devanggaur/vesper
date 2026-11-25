@@ -186,6 +186,9 @@ export interface CuratedNamedPick {
   whySpecial: string;
   insiderTip: string;
   bestTime: string;
+  bookingType?: 'walk_in' | 'timed_ticket' | 'guided_tour' | 'reservation';
+  advanceLeadTime?: string;
+  estimatedCostUsd?: number;
 }
 
 export interface CuratedHotelPick {
@@ -233,8 +236,22 @@ export async function buildDiscoverBlueprint(
       whySpecial: { type: 'string', description: '1 crisp insider sentence (under 20 words)' },
       insiderTip: { type: 'string', description: '1 short practical tip (under 15 words)' },
       bestTime: { type: 'string', description: '12-hour time like "10:00 AM" or "7:30 PM"' },
+      bookingType: {
+        type: 'string',
+        enum: ['walk_in', 'timed_ticket', 'guided_tour', 'reservation'],
+        description:
+          'walk_in for free/open sights, parks, viewpoints & casual cafés; timed_ticket for museums/monuments requiring tickets; guided_tour for bookable tours/experiences; reservation for sit-down restaurants needing a table.',
+      },
+      advanceLeadTime: {
+        type: 'string',
+        description: 'Short booking window, e.g. "No booking needed", "Book 2-3 weeks ahead", or "Reserve 1-2 weeks ahead"',
+      },
+      estimatedCostUsd: {
+        type: 'number',
+        description: 'Estimated per-person ticket/entry cost in USD (0 for free walk-ins or restaurants)',
+      },
     },
-    required: ['name', 'whySpecial', 'insiderTip', 'bestTime'],
+    required: ['name', 'whySpecial', 'insiderTip', 'bestTime', 'bookingType', 'advanceLeadTime', 'estimatedCostUsd'],
   };
 
   const schema = {
@@ -307,7 +324,7 @@ export async function buildDiscoverBlueprint(
   try {
     return await runStructuredJson<DiscoverPlanBlueprint>(
       `Destination: ${destination}${country ? `, ${country}` : ''}\nDates: ${datesLabel}\nTravelers: ${taste.travelers}\nVibes: ${taste.vibes.join(', ')}\nPace: ${taste.pace}\nSplurge style: ${taste.splurge}${hotelLoyaltyNote}`,
-      'You are Vesper, an elite travel editor (Michelin Guide, Eater, Condé Nast Traveler). Return 4 distinct sections (keys: museums, contemporary, food, landmarks — tailor titles to the destination & vibes) with 3 SPECIFIC real venues each, 3 real experiences, and 4 real hotels matching the splurge style (respecting hotel loyalty programs when provided). Be crisp and punchy; never invent fake names.',
+      'You are Vesper, an elite travel editor (Michelin Guide, Eater, Condé Nast Traveler). Return 4 distinct sections (keys: museums, contemporary, food, landmarks — tailor titles to the destination & vibes) with 3 SPECIFIC real venues each, 3 real experiences, and 4 real hotels matching the splurge style (respecting hotel loyalty programs when provided). Include a natural mix of free walk_in spots (viewpoints, neighborhoods, parks, casual cafés) AND timed_ticket museums/monuments plus reservation dining, accurately tagging bookingType, advanceLeadTime, and estimatedCostUsd on each pick. Be crisp and punchy; never invent fake names.',
       schema,
       { enableSearchGrounding: true, timeoutMs: 22000 }
     );

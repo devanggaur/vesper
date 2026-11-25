@@ -17,6 +17,11 @@ import {
 import { ActivityItem, HotelItem, PlaceItem } from '../../types/travel';
 import { SmartImage } from '../common/SmartImage';
 import { renderInlineBold } from '../../utils/format';
+import {
+  getBookingTypeMeta,
+  inferActivityBookingType,
+  inferPlaceBookingType,
+} from '../../utils/bookingHelpers';
 
 /* ── Activities Carousel ──────────────────────────────────────────────── */
 interface ActivityCarouselProps {
@@ -66,7 +71,10 @@ export const ActivityCarousel: React.FC<ActivityCarouselProps> = ({
         ref={scrollRef}
         className="flex gap-3 sm:gap-3.5 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-1 -mx-1 px-1"
       >
-        {activities.map((act) => (
+        {activities.map((act) => {
+          const actBookingType = inferActivityBookingType(act);
+          const actBadge = getBookingTypeMeta(actBookingType);
+          return (
           <div
             key={act.id}
             onMouseEnter={() => onHoverId(act.id)}
@@ -83,6 +91,15 @@ export const ActivityCarousel: React.FC<ActivityCarouselProps> = ({
                   alt={act.title}
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
+                <span
+                  className={`absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold backdrop-blur-md shadow-xs ${
+                    actBookingType === 'walk_in'
+                      ? 'bg-white/90 text-[#2C333A]'
+                      : 'bg-[#0E2034]/85 text-white'
+                  }`}
+                >
+                  {actBadge.shortLabel}
+                </span>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -130,7 +147,7 @@ export const ActivityCarousel: React.FC<ActivityCarouselProps> = ({
                 onClick={() => onOpenActivity(act)}
                 className="py-2 px-3 rounded-full border border-black/[0.1] hover:border-[#0E2034] bg-[#FAF9F5] hover:bg-white text-[12.5px] font-medium text-[#14191F] transition-all cursor-pointer"
               >
-                See availability
+                Tickets & dates
               </button>
               <button
                 onClick={() => onOpenActivity(act)}
@@ -141,7 +158,8 @@ export const ActivityCarousel: React.FC<ActivityCarouselProps> = ({
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -211,6 +229,8 @@ export const PlaceCarousel: React.FC<PlaceCarouselProps> = ({
       >
         {places.map((place) => {
           const isSaved = savedRefIds.has(place.id);
+          const bookingType = inferPlaceBookingType(place);
+          const bookingBadge = getBookingTypeMeta(bookingType);
           return (
             <div
               key={place.id}
@@ -225,6 +245,20 @@ export const PlaceCarousel: React.FC<PlaceCarouselProps> = ({
                   alt={place.name}
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
+                {/* Top-left Booking Requirement Pill */}
+                <span
+                  className={`absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold backdrop-blur-md shadow-xs ${
+                    bookingType === 'walk_in'
+                      ? 'bg-white/92 text-[#2C333A]'
+                      : bookingType === 'timed_ticket'
+                      ? 'bg-amber-500/92 text-white'
+                      : bookingType === 'reservation'
+                      ? 'bg-[#0E2034]/88 text-white'
+                      : 'bg-[#C85A17]/92 text-white'
+                  }`}
+                >
+                  {bookingBadge.shortLabel}
+                </span>
                 {/* Top-right Add (+) / Added (✓) & Heart overlay buttons */}
                 <div className="absolute top-3 right-3 flex items-center gap-1.5">
                   <button

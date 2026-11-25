@@ -64,6 +64,8 @@ export interface FlightSearchResponse {
 export interface HandoffLinkInfo {
   label: string;
   url: string;
+  secondaryLabel?: string;
+  secondaryUrl?: string;
 }
 
 export interface UserPreferencesProfile {
@@ -197,6 +199,8 @@ export const travelApi = {
       title: string;
       fromCode?: string;
       toCode?: string;
+      bookingType?: 'walk_in' | 'timed_ticket' | 'guided_tour' | 'reservation';
+      officialUrl?: string;
     }>;
   }): Promise<Record<string, HandoffLinkInfo>> {
     const res = await apiFetch<{ links: Record<string, HandoffLinkInfo> }>(

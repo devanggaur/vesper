@@ -437,6 +437,7 @@ class VesperStore {
           coords: row.coords ?? undefined,
           flightDetails: row.flight_details ?? undefined,
           hotelDetails: row.hotel_details ?? undefined,
+          bookingMeta: row.booking_meta ?? undefined,
         }));
       }
     }
@@ -463,9 +464,16 @@ class VesperStore {
           coords: item.coords ?? null,
           flight_details: item.flightDetails ?? null,
           hotel_details: item.hotelDetails ?? null,
+          booking_meta: item.bookingMeta ?? null,
         }));
         const { error } = await this.client!.from('trip_items').insert(rows);
-        if (error) console.warn('[vesper-store] replaceTripItems error:', error.message);
+        if (error && error.message?.includes('booking_meta')) {
+          const fallbackRows = rows.map(({ booking_meta: _ignored, ...rest }) => rest);
+          const retry = await this.client!.from('trip_items').insert(fallbackRows);
+          if (retry.error) console.warn('[vesper-store] replaceTripItems retry error:', retry.error.message);
+        } else if (error) {
+          console.warn('[vesper-store] replaceTripItems error:', error.message);
+        }
       }
     }
     return items;

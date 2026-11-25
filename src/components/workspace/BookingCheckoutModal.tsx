@@ -14,8 +14,14 @@ import {
   Award,
   Copy,
 } from 'lucide-react';
-import { LoyaltyProgramEntry, TripSavedItem } from '../../types/travel';
+import { BookingStatus, LoyaltyProgramEntry, TripSavedItem } from '../../types/travel';
 import { HandoffLinkInfo, travelApi } from '../../services/travelApi';
+import {
+  buildVenueBookingLinks,
+  getBookingTypeMeta,
+  getEffectiveBookingType,
+  itemNeedsBookingAction,
+} from '../../utils/bookingHelpers';
 import { downloadItineraryIcs } from '../../utils/time';
 import { BrandMark } from '../common/BrandMark';
 
@@ -27,6 +33,7 @@ interface BookingCheckoutModalProps {
   items: TripSavedItem[];
   loyaltyPrograms?: LoyaltyProgramEntry[];
   onOpenLoyaltyWallet?: (category: 'hotel' | 'airline') => void;
+  onUpdateBookingStatus?: (itemId: string, status: BookingStatus, confirmationCode?: string) => void;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -45,11 +52,18 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
   items,
   loyaltyPrograms = [],
   onOpenLoyaltyWallet,
+  onUpdateBookingStatus,
   onClose,
   onSuccess,
 }) => {
   const [handoffLinks, setHandoffLinks] = useState<Record<string, HandoffLinkInfo>>({});
-  const [bookedIds, setBookedIds] = useState<Set<string>>(new Set());
+  const [localBookedIds, setLocalBookedIds] = useState<Set<string>>(() => {
+    const seeded = new Set<string>();
+    items.forEach((i) => {
+      if (i.bookingMeta?.status === 'booked') seeded.add(i.id);
+    });
+    return seeded;
+  });
   const [copiedLoyaltyId, setCopiedLoyaltyId] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
 
@@ -81,8 +95,13 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
     return undefined;
   };
 
-  const bookableItems = items.filter((i) => i.price && i.price > 0);
+  const bookableItems = items.filter((i) => (i.price && i.price > 0) || itemNeedsBookingAction(i));
   const total = bookableItems.reduce((sum, i) => sum + (i.price || 0), 0);
+
+  const isItemBooked = (item: TripSavedItem): boolean =>
+    item.bookingMeta?.status === 'booked' || localBookedIds.has(item.id);
+
+  const bookedCount = bookableItems.filter(isItemBooked).length;
 
   useEffect(() => {
     if (bookableItems.length === 0) return;
@@ -97,6 +116,8 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
           title: i.title,
           fromCode: i.flightDetails?.outbound.fromCode,
           toCode: i.flightDetails?.outbound.toCode,
+          bookingType: getEffectiveBookingType(i),
+          officialUrl: i.bookingMeta?.officialUrl,
         })),
       })
       .then((links) => {
@@ -111,13 +132,22 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destination, datesLabel, bookableItems.length]);
 
-  const toggleBooked = (id: string) => {
-    setBookedIds((prev) => {
+  const toggleBooked = (item: TripSavedItem) => {
+    const currentlyBooked = isItemBooked(item);
+    const nextBooked = !currentlyBooked;
+    setLocalBookedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (nextBooked) next.add(item.id);
+      else next.delete(item.id);
       return next;
     });
+    if (onUpdateBookingStatus) {
+      onUpdateBookingStatus(
+        item.id,
+        nextBooked ? 'booked' : 'needed',
+        item.bookingMeta?.confirmationCode
+      );
+    }
   };
 
   const getFallbackUrl = (item: TripSavedItem): HandoffLinkInfo => {
@@ -140,9 +170,25 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
         )}`,
       };
     }
+    const bt = getEffectiveBookingType(item);
+    const built = buildVenueBookingLinks({
+      title: item.title,
+      destination,
+      bookingType: bt,
+      officialUrl: item.bookingMeta?.officialUrl,
+      datesLabel,
+    });
+    if (built.official) {
+      return {
+        label: built.official.label,
+        url: built.official.url,
+        secondaryLabel: built.partner.label,
+        secondaryUrl: built.partner.url,
+      };
+    }
     return {
-      label: 'Reserve experience',
-      url: `https://www.google.com/search?q=${encodeURIComponent(`${item.title} ${destination} tickets`)}`,
+      label: built.partner.label,
+      url: built.partner.url,
     };
   };
 
@@ -220,22 +266,24 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
               </div>
               {bookableItems.length > 0 && (
                 <span className="font-tabular text-[11.5px] font-medium px-2.5 py-1 rounded-full bg-[#ECEAE2] text-[#2C333A] shrink-0">
-                  {bookedIds.size}/{bookableItems.length} booked
+                  {bookedCount}/{bookableItems.length} booked
                 </span>
               )}
             </div>
 
-            <div className="space-y-2.5 max-h-[290px] overflow-y-auto thin-scrollbar">
+            <div className="space-y-2.5 max-h-[300px] overflow-y-auto thin-scrollbar">
               {bookableItems.length === 0 ? (
                 <div className="rounded-2xl bg-white border border-black/[0.07] p-4 text-[13px] text-[#5A626A]">
-                  No paid flights, stays, or tours added yet—open the Bookings tab to compare stays
-                  and flights, or export your saved itinerary for free!
+                  All saved stops are walk-in friendly! Open Bookings to compare stays and flights,
+                  or export your saved itinerary for free.
                 </div>
               ) : (
                 bookableItems.map((item) => {
                   const link = getFallbackUrl(item);
-                  const isMarked = bookedIds.has(item.id);
+                  const isMarked = isItemBooked(item);
                   const loyaltyMatch = findLoyaltyForItem(item);
+                  const bt = getEffectiveBookingType(item);
+                  const badgeMeta = getBookingTypeMeta(bt);
                   return (
                     <div
                       key={item.id}
@@ -258,12 +306,28 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
                             </div>
                             <div className="text-[11.5px] text-[#7B828A] truncate">
                               {item.subtitle || `${item.day}${item.time ? ` · ${item.time}` : ''}`}
+                              {(item.type === 'place' || item.type === 'activity') && (
+                                <span className="ml-1.5 text-[#C85A17] font-medium">
+                                  · {badgeMeta.label}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
-                        <span className="font-tabular text-[14px] font-semibold text-[#14191F] shrink-0">
-                          ${item.price?.toLocaleString()}
-                        </span>
+                        {item.price && item.price > 0 ? (
+                          <span className="font-tabular text-[14px] font-semibold text-[#14191F] shrink-0">
+                            ${item.price.toLocaleString()}
+                          </span>
+                        ) : item.bookingMeta?.estimatedCostUsd &&
+                          item.bookingMeta.estimatedCostUsd > 0 ? (
+                          <span className="font-tabular text-[12.5px] font-medium text-[#5A626A] shrink-0">
+                            ~${item.bookingMeta.estimatedCostUsd}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-medium text-[#7B828A] shrink-0">
+                            Direct
+                          </span>
+                        )}
                       </div>
 
                       {/* 1-Tap Loyalty Copy Row for Hotels & Flights */}
@@ -321,24 +385,34 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({
                           </button>
                         ) : null)}
 
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-black/[0.06]">
-                        <a
-                          href={link.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={() => {
-                            if (!bookedIds.has(item.id)) toggleBooked(item.id);
-                          }}
-                          className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#14191F] hover:underline"
-                        >
-                          <span>{link.label}</span>
-                          <ExternalLink className="w-3 h-3 text-[#C85A17]" />
-                        </a>
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-black/[0.06]">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#14191F] hover:underline"
+                          >
+                            <span>{link.label}</span>
+                            <ExternalLink className="w-3 h-3 text-[#C85A17]" />
+                          </a>
+                          {link.secondaryUrl && link.secondaryLabel && (
+                            <a
+                              href={link.secondaryUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#5A626A] hover:text-[#14191F] hover:underline"
+                            >
+                              <span>{link.secondaryLabel}</span>
+                              <ExternalLink className="w-2.5 h-2.5 text-[#C85A17]" />
+                            </a>
+                          )}
+                        </div>
 
                         <button
                           type="button"
-                          onClick={() => toggleBooked(item.id)}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors cursor-pointer ${
+                          onClick={() => toggleBooked(item)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors cursor-pointer shrink-0 ${
                             isMarked
                               ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
                               : 'bg-[#FAF9F5] text-[#5A626A] border-black/[0.09] hover:border-black/[0.22]'

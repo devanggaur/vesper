@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import {
   ActivityItem,
+  BookingStatus,
   ChatMessage,
   Coordinates,
   DiscoverSection,
@@ -26,6 +27,7 @@ import {
   TripSavedItem,
 } from '../../types/travel';
 import { DEFAULT_CDMX_DAYS, travelApi } from '../../services/travelApi';
+import { inferActivityBookingType, inferPlaceBookingType } from '../../utils/bookingHelpers';
 import { BrandMark } from '../common/BrandMark';
 import { ThemeSwitcher, VesperTheme } from '../common/ThemeSwitcher';
 import { TasteCard, TasteProfile } from './TasteCard';
@@ -195,7 +197,42 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           } else {
             setTasteCalibrated(false);
           }
-          setSavedItems(items || []);
+          const catPlaces = trip.catalog?.places || [];
+          const catActivities = trip.catalog?.activities || [];
+          const hydratedItems = (items || []).map((item): TripSavedItem => {
+            if (item.bookingMeta) return item;
+            if (item.type === 'place') {
+              const matched = catPlaces.find((p) => p.id === item.refId);
+              if (matched) {
+                const bt = inferPlaceBookingType(matched);
+                return {
+                  ...item,
+                  bookingMeta: {
+                    bookingType: bt,
+                    status: bt === 'walk_in' ? 'not_needed' : 'needed',
+                    advanceLeadTime: matched.advanceLeadTime,
+                    officialUrl: matched.website,
+                    estimatedCostUsd: matched.estimatedCostUsd,
+                  },
+                };
+              }
+            } else if (item.type === 'activity') {
+              const matched = catActivities.find((a) => a.id === item.refId);
+              const bt = matched ? inferActivityBookingType(matched) : 'guided_tour';
+              return {
+                ...item,
+                bookingMeta: {
+                  bookingType: bt,
+                  status: bt === 'walk_in' ? 'not_needed' : 'needed',
+                  advanceLeadTime: matched?.advanceLeadTime,
+                  officialUrl: matched?.website,
+                  estimatedCostUsd: matched?.pricePerPerson,
+                },
+              };
+            }
+            return item;
+          });
+          setSavedItems(hydratedItems);
           setMessages(savedMsgs || []);
           onTripTitleChange(trip.title);
           onTripLoaded?.({ id: trip.id, slug: trip.slug, title: trip.title });
@@ -354,6 +391,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       onNotify(`Removed ${place.name}`);
       return;
     }
+    const bt = inferPlaceBookingType(place);
     const next: TripSavedItem[] = [
       ...savedItems,
       {
@@ -365,11 +403,53 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         image: place.image,
         day: 'Any time',
         coords: place.coords,
+        bookingMeta: {
+          bookingType: bt,
+          status: bt === 'walk_in' ? 'not_needed' : 'needed',
+          advanceLeadTime: place.advanceLeadTime,
+          officialUrl: place.website,
+          estimatedCostUsd: place.estimatedCostUsd,
+        },
       },
     ];
     setSavedItems(next);
     persistItems(next);
     onNotify(`Added ${place.name} to Timeline`);
+  };
+
+  const handleUpdateItemBookingStatus = (
+    itemId: string,
+    status: BookingStatus,
+    confirmationCode?: string
+  ) => {
+    const targetItem = savedItems.find((i) => i.id === itemId);
+    const next = savedItems.map((item) => {
+      if (item.id !== itemId) return item;
+      const existingType =
+        item.bookingMeta?.bookingType ||
+        (item.type === 'activity' ? 'guided_tour' : 'timed_ticket');
+      return {
+        ...item,
+        bookingMeta: {
+          ...item.bookingMeta,
+          bookingType: existingType,
+          status,
+          confirmationCode:
+            confirmationCode !== undefined
+              ? confirmationCode
+              : item.bookingMeta?.confirmationCode,
+        },
+      };
+    });
+    setSavedItems(next);
+    persistItems(next);
+    if (targetItem) {
+      onNotify(
+        status === 'booked'
+          ? `Marked ${targetItem.title} as confirmed`
+          : `Marked ${targetItem.title} as needs booking`
+      );
+    }
   };
 
   const handleAddActivity = (
@@ -380,6 +460,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     _guests: number,
     total: number
   ) => {
+    const bt = inferActivityBookingType(activity);
     const next: TripSavedItem[] = [
       ...savedItems.filter((i) => i.refId !== activity.id),
       {
@@ -393,6 +474,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         time: `${time} – ${endTime}`,
         price: total,
         coords: activity.coords,
+        bookingMeta: {
+          bookingType: bt,
+          status: bt === 'walk_in' ? 'not_needed' : 'needed',
+          advanceLeadTime: activity.advanceLeadTime,
+          officialUrl: activity.website,
+          estimatedCostUsd: activity.pricePerPerson,
+        },
       },
     ];
     setSavedItems(next);
@@ -520,16 +608,26 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       const seedPlaces = places
         .filter((p) => !existing.has(p.id))
         .slice(0, 6)
-        .map<TripSavedItem>((p) => ({
-          id: `saved-${p.id}`,
-          refId: p.id,
-          type: 'place',
-          title: p.name,
-          subtitle: p.neighborhood,
-          image: p.image,
-          day: 'Any time',
-          coords: p.coords,
-        }));
+        .map<TripSavedItem>((p) => {
+          const bt = inferPlaceBookingType(p);
+          return {
+            id: `saved-${p.id}`,
+            refId: p.id,
+            type: 'place',
+            title: p.name,
+            subtitle: p.neighborhood,
+            image: p.image,
+            day: 'Any time',
+            coords: p.coords,
+            bookingMeta: {
+              bookingType: bt,
+              status: bt === 'walk_in' ? 'not_needed' : 'needed',
+              advanceLeadTime: p.advanceLeadTime,
+              officialUrl: p.website,
+              estimatedCostUsd: p.estimatedCostUsd,
+            },
+          };
+        });
       working = [...working, ...seedPlaces];
       if (!working.some((i) => i.type === 'activity') && activities[0]) {
         const act = activities[0];
@@ -1042,6 +1140,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                     setSavedItems(next);
                     persistItems(next);
                   }}
+                  onUpdateItemBookingStatus={handleUpdateItemBookingStatus}
                   onOpenBookingCheckout={() => setShowBookingModal(true)}
                   onOpenMapDay={(day) => {
                     setFocusedMapDay(day);
@@ -1084,7 +1183,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 key={`${sheetTarget.kind}-${sheetTarget.item.id}`}
                 target={sheetTarget}
                 destination={destination}
+                datesLabel={datesLabel}
                 days={days}
+                savedItem={savedItems.find((i) => i.refId === sheetTarget.item.id) || null}
                 isPlaceSaved={
                   sheetTarget.kind === 'place' ? savedRefIds.has(sheetTarget.item.id) : false
                 }
@@ -1094,6 +1195,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onToggleSavePlace={handleToggleSavePlace}
                 onAddActivity={handleAddActivity}
                 onAddHotel={handleAddHotel}
+                onUpdateBookingStatus={handleUpdateItemBookingStatus}
                 onAskVesper={(q) => {
                   setMobileCopilotOpen(true);
                   handleCoPilotSend(q);
@@ -1219,6 +1321,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             items={savedItems}
             loyaltyPrograms={loyaltyPrograms}
             onOpenLoyaltyWallet={onOpenLoyaltyWallet}
+            onUpdateBookingStatus={handleUpdateItemBookingStatus}
             onClose={() => setShowBookingModal(false)}
             onSuccess={() => onNotify(`Trip confirmed for ${destination}!`)}
           />

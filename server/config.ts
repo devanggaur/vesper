@@ -15,6 +15,10 @@ export const config = {
   amadeusClientSecret: process.env.AMADEUS_CLIENT_SECRET || '',
   amadeusBaseUrl: process.env.AMADEUS_BASE_URL || 'https://test.api.amadeus.com',
   liteApiKey: process.env.LITEAPI_KEY || '',
+  /** Optional Affiliate Partner IDs / Basic API keys for Experiences & Tickets */
+  viatorPartnerId: process.env.VIATOR_PARTNER_ID || '',
+  gygPartnerId: process.env.GYG_PARTNER_ID || '',
+  viatorApiKey: process.env.VIATOR_API_KEY || '',
   /** Fast, low-cost model fallback chain so transient 503 demand spikes fail over quickly */
   geminiModels: [
     'gemini-3.5-flash-lite',

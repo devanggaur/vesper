@@ -1,5 +1,17 @@
 export type AppView = 'landing' | 'workspace';
 
+export type BookingType = 'walk_in' | 'timed_ticket' | 'guided_tour' | 'reservation';
+export type BookingStatus = 'not_needed' | 'needed' | 'booked';
+
+export interface ItemBookingMeta {
+  bookingType: BookingType;
+  status: BookingStatus;
+  confirmationCode?: string;
+  advanceLeadTime?: string;
+  officialUrl?: string;
+  estimatedCostUsd?: number;
+}
+
 export interface Coordinates {
   lat: number;
   lng: number;
@@ -29,6 +41,10 @@ export interface ActivityItem {
     pricePerPerson: number;
   }[];
   category: string;
+  bookingType?: BookingType;
+  advanceLeadTime?: string;
+  website?: string;
+  weekdayDescriptions?: string[];
 }
 
 export interface PlaceItem {
@@ -48,6 +64,7 @@ export interface PlaceItem {
   hours: {
     closedDay?: string;
     openSchedule: string;
+    weekdayDescriptions?: string[];
   };
   details: {
     goodForChildren?: boolean;
@@ -61,6 +78,9 @@ export interface PlaceItem {
   neighborhood: string;
   suggestedDay?: string;
   suggestedTime?: string;
+  bookingType?: BookingType;
+  advanceLeadTime?: string;
+  estimatedCostUsd?: number;
 }
 
 export interface HotelRoom {
@@ -171,6 +191,7 @@ export interface TripSavedItem {
     checkOut: string;
     roomName: string;
   };
+  bookingMeta?: ItemBookingMeta;
 }
 
 export type ChatBlock =

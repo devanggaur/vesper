@@ -16,9 +16,17 @@ import {
   Car,
   Footprints,
   MapPin,
+  CheckCircle2,
+  ExternalLink,
 } from 'lucide-react';
-import { TripDayMeta, TripSavedItem } from '../../types/travel';
+import { BookingStatus, TripDayMeta, TripSavedItem } from '../../types/travel';
 import { DEFAULT_CDMX_DAYS, RouteLegEstimate, travelApi } from '../../services/travelApi';
+import {
+  buildVenueBookingLinks,
+  getBookingTypeMeta,
+  getEffectiveBookingType,
+  itemNeedsBookingAction,
+} from '../../utils/bookingHelpers';
 import { computeTransitEstimate } from '../../utils/geo';
 import { downloadItineraryIcs, parseStartTimeMinutes } from '../../utils/time';
 import { SmartImage } from '../common/SmartImage';
@@ -40,6 +48,7 @@ interface CanvasTimelineProps {
   onInspectItem: (item: TripSavedItem) => void;
   onRemoveItem: (id: string) => void;
   onUpdateItemTime: (id: string, day: TripSavedItem['day'], time: string) => void;
+  onUpdateItemBookingStatus?: (id: string, status: BookingStatus, confirmationCode?: string) => void;
   onOpenBookingCheckout: () => void;
   onOpenMapDay: (day: string) => void;
   onNotify: (msg: string) => void;
@@ -69,11 +78,13 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
   onInspectItem,
   onRemoveItem,
   onUpdateItemTime,
+  onUpdateItemBookingStatus,
   onOpenBookingCheckout,
   onOpenMapDay,
   onNotify,
 }) => {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [confDrafts, setConfDrafts] = useState<Record<string, string>>({});
   const [liveRoutes, setLiveRoutes] = useState<Record<string, RouteLegEstimate>>({});
 
   const bannerImage = heroImage || travelApi.getDestinationHeroImage();
@@ -82,6 +93,9 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
   const stops = items.filter((i) => i.type === 'place' || i.type === 'activity');
   const unscheduled = stops.filter((i) => i.day === 'Any time');
   const totalCost = items.reduce((sum, i) => sum + (i.price || 0), 0);
+  const pendingTicketStops = stops.filter(
+    (s) => itemNeedsBookingAction(s) && s.bookingMeta?.status !== 'booked'
+  );
 
   // Build ordered consecutive coordinate pairs across all days for 1 batched OSRM route lookup
   const routeLegs = useMemo(() => {
@@ -289,6 +303,35 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
         )}
       </div>
 
+      {/* Pending Tickets & Reservations Action Strip */}
+      {pendingTicketStops.length > 0 && (
+        <div className="rounded-[18px] bg-amber-50/80 border border-amber-200/80 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+              <Ticket className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-amber-950">
+                {pendingTicketStops.length}{' '}
+                {pendingTicketStops.length === 1 ? 'stop needs a ticket or table' : 'stops need tickets or tables'}
+              </div>
+              <div className="text-[11.5px] text-amber-900/75 truncate">
+                {pendingTicketStops.map((s) => s.title).slice(0, 3).join(' · ')}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenBookingCheckout}
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[12px] font-medium cursor-pointer shrink-0"
+            style={{ color: '#FFFFFF' }}
+          >
+            <span>Open booking links</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Unscheduled / Holding Tray with One-Click Organize */}
       {unscheduled.length > 0 && (
         <div className="rounded-[22px] bg-[#FAF9F5] border border-black/[0.08] p-4 space-y-3">
@@ -423,6 +466,18 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                     const transit = nextItem
                       ? liveRoutes[legId] || computeTransitEstimate(item.coords, nextItem.coords)
                       : null;
+                    const bookingType = getEffectiveBookingType(item);
+                    const bookingBadge = getBookingTypeMeta(bookingType);
+                    const isBooked = item.bookingMeta?.status === 'booked';
+                    const venueLinks = bookingBadge.needsBooking
+                      ? buildVenueBookingLinks({
+                          title: item.title,
+                          destination,
+                          bookingType,
+                          officialUrl: item.bookingMeta?.officialUrl,
+                          datesLabel,
+                        })
+                      : null;
 
                     return (
                       <div key={item.id}>
@@ -456,11 +511,33 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                                 <div className="text-[14px] font-semibold text-[#14191F] truncate">
                                   {item.title}
                                 </div>
-                                <div className="flex items-center flex-wrap gap-2 mt-1">
+                                <div className="flex items-center flex-wrap gap-1.5 mt-1">
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-black/[0.07] font-tabular text-[11px] font-medium text-[#2C333A]">
                                     <Clock className="w-3 h-3 text-[#7B828A]" />
                                     <span>{item.time || 'Flexible'}</span>
                                   </span>
+                                  {bookingBadge.needsBooking ? (
+                                    isBooked ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10.5px] font-semibold text-emerald-700">
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        <span>
+                                          Confirmed
+                                          {item.bookingMeta?.confirmationCode
+                                            ? ` · #${item.bookingMeta.confirmationCode}`
+                                            : ''}
+                                        </span>
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10.5px] font-semibold text-amber-800">
+                                        <Ticket className="w-3 h-3" />
+                                        <span>{bookingBadge.label}</span>
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#ECEAE2]/70 text-[10.5px] font-medium text-[#5A626A]">
+                                      Walk-in
+                                    </span>
+                                  )}
                                   {item.subtitle && (
                                     <span className="text-[11.5px] text-[#7B828A] truncate">
                                       {item.subtitle}
@@ -470,7 +547,7 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                               </div>
                             </button>
 
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
                               {item.price ? (
                                 <span className="font-tabular text-[14px] font-semibold text-[#14191F]">
                                   ${item.price}
@@ -481,7 +558,7 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                                   setEditingItemId(editingItemId === item.id ? null : item.id)
                                 }
                                 className="p-1.5 rounded-lg hover:bg-black/[0.05] text-[#7B828A] cursor-pointer"
-                                title="Edit time or remove"
+                                title="Edit time, ticket status, or remove"
                               >
                                 <ChevronDown className="w-4 h-4" />
                               </button>
@@ -494,47 +571,118 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                                 initial={{ opacity: 0, height: 0 }}
                                 animate={{ opacity: 1, height: 'auto' }}
                                 exit={{ opacity: 0, height: 0 }}
-                                className="mt-3 pt-2.5 border-t border-black/[0.06] flex flex-wrap items-center justify-between gap-2 overflow-hidden"
+                                className="mt-3 pt-2.5 border-t border-black/[0.06] space-y-2.5 overflow-hidden"
                               >
-                                <div className="flex flex-wrap gap-1.5 items-center">
-                                  <Calendar className="w-3.5 h-3.5 text-[#7B828A]" />
-                                  {days.map((d) => (
-                                    <button
-                                      key={d.key}
-                                      onClick={() => onUpdateItemTime(item.id, d.key, item.time || '11:00 AM')}
-                                      className={`px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer ${
-                                        item.day === d.key
-                                          ? 'bg-[#0E2034]'
-                                          : 'bg-white border border-black/[0.08] text-[#4A535C]'
-                                      }`}
-                                    >
-                                      {d.short}
-                                    </button>
-                                  ))}
-                                  <span className="mx-1 text-black/20">|</span>
-                                  {TIME_SLOTS.slice(0, 5).map((slot) => (
-                                    <button
-                                      key={slot}
-                                      onClick={() => {
-                                        onUpdateItemTime(item.id, dayInfo.key, slot);
-                                        setEditingItemId(null);
-                                      }}
-                                      className={`px-2 py-0.5 rounded-full font-tabular text-[11px] cursor-pointer ${
-                                        item.time === slot
-                                          ? 'bg-[#0E2034]'
-                                          : 'bg-white border border-black/[0.08] text-[#4A535C]'
-                                      }`}
-                                    >
-                                      {slot}
-                                    </button>
-                                  ))}
+                                {bookingBadge.needsBooking && venueLinks && onUpdateItemBookingStatus && (
+                                  <div className="rounded-xl bg-white border border-black/[0.07] p-2.5 flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      {venueLinks.official && (
+                                        <a
+                                          href={venueLinks.official.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#0E2034] text-[11px] font-medium"
+                                          style={{ color: '#FFFFFF' }}
+                                        >
+                                          <span>{venueLinks.official.label}</span>
+                                          <ExternalLink className="w-2.5 h-2.5" />
+                                        </a>
+                                      )}
+                                      <a
+                                        href={venueLinks.partner.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FAF9F5] border border-black/[0.1] text-[11px] font-medium text-[#14191F] hover:border-[#0E2034]"
+                                      >
+                                        <span>{venueLinks.partner.label}</span>
+                                        <ExternalLink className="w-2.5 h-2.5 text-[#C85A17]" />
+                                      </a>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="text"
+                                        value={
+                                          confDrafts[item.id] ??
+                                          item.bookingMeta?.confirmationCode ??
+                                          ''
+                                        }
+                                        onChange={(e) =>
+                                          setConfDrafts((prev) => ({
+                                            ...prev,
+                                            [item.id]: e.target.value,
+                                          }))
+                                        }
+                                        placeholder="Conf # (optional)"
+                                        className="w-28 rounded-full border border-black/[0.1] bg-[#FAF9F5] px-2.5 py-1 text-[11px] text-[#14191F] focus:outline-none focus:border-[#0E2034]"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const code = (
+                                            confDrafts[item.id] ??
+                                            item.bookingMeta?.confirmationCode ??
+                                            ''
+                                          ).trim();
+                                          onUpdateItemBookingStatus(
+                                            item.id,
+                                            isBooked ? 'needed' : 'booked',
+                                            code || undefined
+                                          );
+                                        }}
+                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border cursor-pointer ${
+                                          isBooked
+                                            ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                            : 'bg-white text-[#14191F] border-black/[0.14] hover:border-[#0E2034]'
+                                        }`}
+                                      >
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        <span>{isBooked ? 'Confirmed' : 'Mark booked'}</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex flex-wrap gap-1.5 items-center">
+                                    <Calendar className="w-3.5 h-3.5 text-[#7B828A]" />
+                                    {days.map((d) => (
+                                      <button
+                                        key={d.key}
+                                        onClick={() => onUpdateItemTime(item.id, d.key, item.time || '11:00 AM')}
+                                        className={`px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer ${
+                                          item.day === d.key
+                                            ? 'bg-[#0E2034]'
+                                            : 'bg-white border border-black/[0.08] text-[#4A535C]'
+                                        }`}
+                                      >
+                                        {d.short}
+                                      </button>
+                                    ))}
+                                    <span className="mx-1 text-black/20">|</span>
+                                    {TIME_SLOTS.slice(0, 5).map((slot) => (
+                                      <button
+                                        key={slot}
+                                        onClick={() => {
+                                          onUpdateItemTime(item.id, dayInfo.key, slot);
+                                          setEditingItemId(null);
+                                        }}
+                                        className={`px-2 py-0.5 rounded-full font-tabular text-[11px] cursor-pointer ${
+                                          item.time === slot
+                                            ? 'bg-[#0E2034]'
+                                            : 'bg-white border border-black/[0.08] text-[#4A535C]'
+                                        }`}
+                                      >
+                                        {slot}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <button
+                                    onClick={() => onRemoveItem(item.id)}
+                                    className="inline-flex items-center gap-1 text-[11.5px] text-rose-600 hover:underline cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" /> Remove
+                                  </button>
                                 </div>
-                                <button
-                                  onClick={() => onRemoveItem(item.id)}
-                                  className="inline-flex items-center gap-1 text-[11.5px] text-rose-600 hover:underline cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" /> Remove
-                                </button>
                               </motion.div>
                             )}
                           </AnimatePresence>

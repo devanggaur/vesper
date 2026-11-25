@@ -38,18 +38,23 @@ const handoffSchema = z.object({
       title: z.string(),
       fromCode: z.string().optional(),
       toCode: z.string().optional(),
+      bookingType: z.enum(['walk_in', 'timed_ticket', 'guided_tour', 'reservation']).optional(),
+      officialUrl: z.string().optional(),
     })
   ),
 });
 
 /**
  * POST /api/bookings/handoff-links
- * Generates pre-filled direct provider checkout URLs (Google Flights, Google Hotels, Experiences)
- * so MVP users can complete live bookings directly with airlines & hotels at $0 Vesper fee.
+ * Generates pre-filled direct provider checkout URLs (Google Flights, Google Hotels,
+ * Official Box Office + Viator/GetYourGuide Affiliate links) at $0 Vesper fee.
  */
 bookingsRoutes.post('/handoff-links', async (c) => {
   const body = handoffSchema.parse(await c.req.json());
-  const links: Record<string, { label: string; url: string }> = {};
+  const links: Record<
+    string,
+    { label: string; url: string; secondaryLabel?: string; secondaryUrl?: string }
+  > = {};
 
   for (const item of body.items) {
     if (item.type === 'flight') {
@@ -66,11 +71,27 @@ bookingsRoutes.post('/handoff-links', async (c) => {
         label: 'Book on Google Hotels',
         url: buildGoogleHotelsUrl(item.title, body.destination, body.datesLabel),
       };
-    } else if (item.type === 'activity') {
-      links[item.id] = {
-        label: 'Reserve experience',
-        url: buildActivityBookingUrl(item.title, body.destination),
-      };
+    } else {
+      const bookingType = item.bookingType || (item.type === 'activity' ? 'guided_tour' : 'timed_ticket');
+      const partner = buildActivityBookingUrl(item.title, body.destination, bookingType);
+      const hasOfficial =
+        Boolean(item.officialUrl) &&
+        /^https?:\/\//i.test(item.officialUrl!) &&
+        !item.officialUrl!.includes('google.com/maps/place');
+
+      if (hasOfficial) {
+        links[item.id] = {
+          label: bookingType === 'reservation' ? 'Official restaurant site' : 'Official box office',
+          url: item.officialUrl!,
+          secondaryLabel: partner.label,
+          secondaryUrl: partner.url,
+        };
+      } else {
+        links[item.id] = {
+          label: partner.label,
+          url: partner.url,
+        };
+      }
     }
   }
 
