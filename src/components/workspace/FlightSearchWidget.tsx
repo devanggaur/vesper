@@ -23,6 +23,7 @@ interface FlightSearchWidgetProps {
   to: string;
   dates: string;
   passengers: string;
+  onChangeOrigin?: (origin: string) => void;
   onAddFlights: (outbound: FlightOption, inbound: FlightOption, fare: FareClass) => void;
 }
 
@@ -86,10 +87,11 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
   to,
   dates,
   passengers,
+  onChangeOrigin,
   onAddFlights,
 }) => {
   const [originCity, setOriginCity] = useState(
-    ORIGIN_PRESETS.find((p) => p.toLowerCase().includes(from.toLowerCase())) || 'San Francisco (SFO)'
+    ORIGIN_PRESETS.find((p) => p.toLowerCase().includes(from.toLowerCase())) || from || 'San Francisco (SFO)'
   );
   const [flightData, setFlightData] = useState<FlightSearchResponse | null>(null);
   const [isFetchingRoute, setIsFetchingRoute] = useState(true);
@@ -211,7 +213,10 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
           <div className="flex items-center justify-between">
             <select
               value={originCity}
-              onChange={(e) => setOriginCity(e.target.value)}
+              onChange={(e) => {
+                setOriginCity(e.target.value);
+                onChangeOrigin?.(e.target.value);
+              }}
               className="w-full appearance-none [-webkit-appearance:none] bg-transparent text-[13px] font-semibold text-[#14191F] focus:outline-none cursor-pointer pr-4 truncate"
               aria-label="Departure airport"
             >

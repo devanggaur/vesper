@@ -45,6 +45,10 @@ interface WorkspaceViewProps {
   initialDates?: string;
   initialTravelers?: string;
   initialFocusMode?: 'flights' | 'stays' | 'activities';
+  savedDefaultTaste?: TasteProfile | null;
+  homeAirport?: string;
+  onChangeHomeAirport?: (airport: string) => void;
+  onSaveDefaultTaste?: (profile: TasteProfile) => void;
   theme: VesperTheme;
   onChangeTheme: (t: VesperTheme) => void;
   onOpenSidebar: () => void;
@@ -69,6 +73,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   initialDates = 'Fri, Jun 19 – Sun, Jun 21',
   initialTravelers = '2 adults',
   initialFocusMode,
+  savedDefaultTaste,
+  homeAirport,
+  onChangeHomeAirport,
+  onSaveDefaultTaste,
   theme,
   onChangeTheme,
   onOpenSidebar,
@@ -260,6 +268,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   /* ── Taste Calibration -> Live Gemini + Google Places Discover Feed ──── */
   const handleTasteSubmit = async (profile: TasteProfile) => {
     setTasteProfile(profile);
+    onSaveDefaultTaste?.(profile);
     setTasteCalibrated(true);
     setActiveTab('discover');
     setIsComposingCatalog(true);
@@ -875,6 +884,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                     <TasteCard
                       destination={destination}
                       dates={datesLabel}
+                      initialProfile={tasteProfile || savedDefaultTaste}
                       onSubmit={handleTasteSubmit}
                     />
                   </div>
@@ -1027,6 +1037,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 <CanvasBookings
                   subTab={bookingsSubTab}
                   onChangeSubTab={setBookingsSubTab}
+                  homeAirport={homeAirport}
+                  onChangeHomeAirport={onChangeHomeAirport}
                   destination={destination}
                   datesLabel={datesLabel}
                   travelers={travelersLabel}

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import { AppView, TripSummary } from './types/travel';
-import { travelApi } from './services/travelApi';
+import { travelApi, UserPreferencesProfile } from './services/travelApi';
 import { supabaseBrowser } from './lib/supabaseClient';
 import { LandingView } from './components/landing/LandingView';
 import { getDefaultTripDateSelection } from './components/landing/DateRangePicker';
 import { WorkspaceView } from './components/workspace/WorkspaceView';
+import { TasteProfile } from './components/workspace/TasteCard';
 import { TripSidebar } from './components/common/TripSidebar';
 import { AuthModal } from './components/common/AuthModal';
 import { VesperTheme } from './components/common/ThemeSwitcher';
@@ -76,6 +77,8 @@ export function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const userProfileRef = useRef<UserProfile | null>(null);
+  const [homeAirport, setHomeAirport] = useState('San Francisco (SFO)');
+  const [defaultTaste, setDefaultTaste] = useState<TasteProfile | null>(null);
   const [currentTripTitle, setCurrentTripTitle] = useState('Mexico City Modernist Weekend');
   const [recentTrips, setRecentTrips] = useState<TripSummary[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -105,6 +108,45 @@ export function App() {
     refreshRecentTrips();
   }, [refreshRecentTrips]);
 
+  const handleThemeChange = useCallback((nextTheme: VesperTheme) => {
+    setTheme(nextTheme);
+    if (userProfileRef.current) {
+      travelApi.updateProfile({ preferredTheme: nextTheme }).catch(() => {});
+    }
+  }, []);
+
+  const handleChangeHomeAirport = useCallback((airport: string) => {
+    setHomeAirport(airport);
+    if (userProfileRef.current) {
+      travelApi.updateProfile({ homeAirport: airport }).catch(() => {});
+    }
+  }, []);
+
+  const handleSaveDefaultTaste = useCallback((profile: TasteProfile) => {
+    setDefaultTaste(profile);
+    if (userProfileRef.current) {
+      travelApi.updateProfile({ defaultTaste: profile }).catch(() => {});
+    }
+  }, []);
+
+  const loadUserPreferences = useCallback(() => {
+    travelApi
+      .getProfile()
+      .then((prefs: UserPreferencesProfile | null) => {
+        if (!prefs) return;
+        if (prefs.homeAirport) setHomeAirport(prefs.homeAirport);
+        if (prefs.defaultTaste) setDefaultTaste(prefs.defaultTaste);
+        if (
+          prefs.preferredTheme === 'twilight' ||
+          prefs.preferredTheme === 'nocturne' ||
+          prefs.preferredTheme === 'mediterranean'
+        ) {
+          setTheme(prefs.preferredTheme);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Listen to Supabase Auth session changes (including Google OAuth redirects) and claim active trip
   useEffect(() => {
     if (!supabaseBrowser) return;
@@ -113,6 +155,7 @@ export function App() {
       const prof = extractUserProfile(data.session?.user);
       userProfileRef.current = prof;
       setUserProfile(prof);
+      if (prof) loadUserPreferences();
     });
 
     const { data: listener } = supabaseBrowser.auth.onAuthStateChange((event, session) => {
@@ -122,6 +165,7 @@ export function App() {
 
       if (event === 'SIGNED_IN' && prof) {
         notify(`Signed in as ${prof.name?.split(' ')[0] || prof.email}`);
+        loadUserPreferences();
       }
 
       if (prof && activeTripIdRef.current) {
@@ -137,7 +181,7 @@ export function App() {
     return () => {
       listener.subscription.unsubscribe();
     };
-  }, [notify, refreshRecentTrips]);
+  }, [loadUserPreferences, notify, refreshRecentTrips]);
 
   // Support browser Back / Forward across `/` and `/t/:slug`
   useEffect(() => {
@@ -241,7 +285,7 @@ export function App() {
             <LandingView
               theme={theme}
               userProfile={userProfile}
-              onChangeTheme={setTheme}
+              onChangeTheme={handleThemeChange}
               onStartTrip={handleStartTrip}
               onOpenSidebar={() => {
                 refreshRecentTrips();
@@ -266,8 +310,12 @@ export function App() {
               initialDates={initialDates}
               initialTravelers={initialTravelers}
               initialFocusMode={focusMode}
+              savedDefaultTaste={defaultTaste}
+              homeAirport={homeAirport}
+              onChangeHomeAirport={handleChangeHomeAirport}
+              onSaveDefaultTaste={handleSaveDefaultTaste}
               theme={theme}
-              onChangeTheme={setTheme}
+              onChangeTheme={handleThemeChange}
               onOpenSidebar={() => {
                 refreshRecentTrips();
                 setSidebarOpen(true);
@@ -287,7 +335,7 @@ export function App() {
         isOpen={sidebarOpen}
         theme={theme}
         userProfile={userProfile}
-        onChangeTheme={setTheme}
+        onChangeTheme={handleThemeChange}
         onClose={() => setSidebarOpen(false)}
         currentTripTitle={currentTripTitle}
         recentTrips={recentTrips}

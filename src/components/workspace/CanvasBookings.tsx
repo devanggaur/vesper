@@ -9,6 +9,8 @@ import { SmartImage } from '../common/SmartImage';
 interface CanvasBookingsProps {
   subTab: 'stays' | 'flights';
   onChangeSubTab: (tab: 'stays' | 'flights') => void;
+  homeAirport?: string;
+  onChangeHomeAirport?: (airport: string) => void;
   destination?: string;
   datesLabel?: string;
   travelers?: string;
@@ -28,6 +30,8 @@ interface CanvasBookingsProps {
 export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   subTab,
   onChangeSubTab,
+  homeAirport = 'San Francisco (SFO)',
+  onChangeHomeAirport,
   destination = 'Mexico City',
   datesLabel = 'Jun 19 – 21',
   travelers = '2 adults',
@@ -173,10 +177,11 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
       ) : (
         <div className="space-y-4">
           <FlightSearchWidget
-            from="San Francisco"
+            from={homeAirport}
             to={destination}
             dates={datesLabel}
             passengers={travelers}
+            onChangeOrigin={onChangeHomeAirport}
             onAddFlights={onAddFlights}
           />
         </div>

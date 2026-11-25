@@ -65,6 +65,21 @@ export interface HandoffLinkInfo {
   url: string;
 }
 
+export interface UserPreferencesProfile {
+  id: string;
+  email: string;
+  fullName: string | null;
+  avatarUrl: string | null;
+  homeAirport: string;
+  preferredTheme: 'twilight' | 'nocturne' | 'mediterranean';
+  defaultTaste: {
+    travelers: string;
+    vibes: string[];
+    pace: 'Unhurried' | 'Balanced' | 'Packed';
+    splurge: 'Smart' | 'Elevated' | 'Iconic';
+  } | null;
+}
+
 export const DEFAULT_CDMX_DAYS: TripDayMeta[] = [
   { key: 'Fri, Jun 19', short: 'Fri', themeLabel: 'Centro & Roma Norte', dotColor: '#C05A2B' },
   { key: 'Sat, Jun 20', short: 'Sat', themeLabel: 'Chapultepec & Polanco', dotColor: '#2563EB' },
@@ -127,6 +142,23 @@ export const travelApi = {
     return apiFetch(`/api/trips/${encodeURIComponent(tripId)}/claim`, {
       method: 'POST',
     });
+  },
+
+  async getProfile(): Promise<UserPreferencesProfile | null> {
+    const res = await apiFetch<{ profile: UserPreferencesProfile | null }>('/api/profile');
+    return res.profile;
+  },
+
+  async updateProfile(patch: {
+    homeAirport?: string;
+    preferredTheme?: 'twilight' | 'nocturne' | 'mediterranean';
+    defaultTaste?: UserPreferencesProfile['defaultTaste'];
+  }): Promise<UserPreferencesProfile | null> {
+    const res = await apiFetch<{ profile: UserPreferencesProfile | null }>('/api/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+    return res.profile;
   },
 
   async estimateRoutes(

@@ -16,6 +16,7 @@ export interface TasteProfile {
 interface TasteCardProps {
   destination: string;
   dates: string;
+  initialProfile?: Partial<TasteProfile> | null;
   onSubmit: (profile: TasteProfile) => void;
 }
 
@@ -72,16 +73,26 @@ const SPLURGE_NOTES = [
   'Splurge where it counts — iconic dining & design suites',
 ];
 
-export const TasteCard: React.FC<TasteCardProps> = ({ destination, dates, onSubmit }) => {
-  const [travelers, setTravelers] = useState('Maria & me');
-  const [selectedVibes, setSelectedVibes] = useState<string[]>([
-    'Museums & Art',
-    'Architecture',
-    'Iconic Dining',
-    'Contemporary Art',
-  ]);
-  const [paceIdx, setPaceIdx] = useState(1);
-  const [splurgeIdx, setSplurgeIdx] = useState(2);
+export const TasteCard: React.FC<TasteCardProps> = ({
+  destination,
+  dates,
+  initialProfile,
+  onSubmit,
+}) => {
+  const [travelers, setTravelers] = useState(initialProfile?.travelers || 'Maria & me');
+  const [selectedVibes, setSelectedVibes] = useState<string[]>(
+    initialProfile?.vibes && initialProfile.vibes.length > 0
+      ? initialProfile.vibes
+      : ['Museums & Art', 'Architecture', 'Iconic Dining', 'Contemporary Art']
+  );
+  const [paceIdx, setPaceIdx] = useState(() => {
+    const idx = initialProfile?.pace ? PACE_LABELS.indexOf(initialProfile.pace) : -1;
+    return idx >= 0 ? idx : 1;
+  });
+  const [splurgeIdx, setSplurgeIdx] = useState(() => {
+    const idx = initialProfile?.splurge ? SPLURGE_LABELS.indexOf(initialProfile.splurge) : -1;
+    return idx >= 0 ? idx : 2;
+  });
 
   const toggleVibe = (id: string) => {
     setSelectedVibes((prev) =>

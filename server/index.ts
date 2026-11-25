@@ -10,6 +10,7 @@ import { tripsRoutes } from './routes/trips';
 import { placesRoutes } from './routes/places';
 import { routingRoutes } from './routes/routes';
 import { bookingsRoutes } from './routes/bookings';
+import { profileRoutes } from './routes/profile';
 
 /**
  * Vesper Full-Stack Server (Hono + TypeScript)
@@ -62,6 +63,7 @@ app.route('/api/trips', tripsRoutes);
 app.route('/api/places', placesRoutes);
 app.route('/api/routes', routingRoutes);
 app.route('/api/bookings', bookingsRoutes);
+app.route('/api/profile', profileRoutes);
 
 // Production single-service SPA static hosting (serves `dist/` + `/t/:slug` fallback)
 const distDir = path.resolve(process.cwd(), 'dist');

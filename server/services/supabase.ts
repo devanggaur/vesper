@@ -10,6 +10,24 @@ export interface TripDayRecord {
   dotColor: string;
 }
 
+export interface VerifiedAuthUser {
+  id: string;
+  email: string;
+  name?: string;
+  avatarUrl?: string;
+}
+
+export interface StoredProfile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  home_airport: string;
+  preferred_theme: string;
+  default_taste: Record<string, unknown> | null;
+  last_seen_at: string;
+}
+
 export interface StoredTrip {
   id: string;
   slug: string;
@@ -127,17 +145,104 @@ class VesperStore {
   }
 
   /** Verifies an incoming `Authorization: Bearer <token>` header against Supabase Auth. */
-  async verifyAccessToken(authHeader?: string): Promise<{ id: string; email?: string } | null> {
+  async verifyAccessToken(authHeader?: string): Promise<VerifiedAuthUser | null> {
     if (!this.client || !authHeader || !authHeader.startsWith('Bearer ')) return null;
     const token = authHeader.slice(7).trim();
     if (!token) return null;
     try {
       const { data, error } = await this.client.auth.getUser(token);
       if (error || !data?.user) return null;
-      return { id: data.user.id, email: data.user.email };
+      const meta = (data.user.user_metadata || {}) as Record<string, unknown>;
+      return {
+        id: data.user.id,
+        email: data.user.email || '',
+        name:
+          (typeof meta.full_name === 'string' && meta.full_name) ||
+          (typeof meta.name === 'string' && meta.name) ||
+          undefined,
+        avatarUrl:
+          (typeof meta.avatar_url === 'string' && meta.avatar_url) ||
+          (typeof meta.picture === 'string' && meta.picture) ||
+          undefined,
+      };
     } catch {
       return null;
     }
+  }
+
+  /* ── User Profiles (`public.profiles`) ───────────────────────────────── */
+
+  async getOrCreateProfile(user: VerifiedAuthUser): Promise<StoredProfile | null> {
+    if (!(await this.ensureChecked())) return null;
+
+    const { data: existing, error: selErr } = await this.client!
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (selErr) {
+      // Gracefully ignore if `phase4_profiles.sql` hasn't been executed yet
+      return null;
+    }
+
+    if (existing) {
+      // Refresh `last_seen_at` quietly in the background
+      this.client!
+        .from('profiles')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', user.id)
+        .then(() => {});
+      return existing as StoredProfile;
+    }
+
+    const { data: created, error: insErr } = await this.client!
+      .from('profiles')
+      .upsert(
+        {
+          id: user.id,
+          email: user.email,
+          full_name: user.name ?? null,
+          avatar_url: user.avatarUrl ?? null,
+          last_seen_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      )
+      .select('*')
+      .maybeSingle();
+
+    if (insErr || !created) return null;
+    return created as StoredProfile;
+  }
+
+  async updateProfile(
+    user: VerifiedAuthUser,
+    patch: {
+      home_airport?: string;
+      preferred_theme?: string;
+      default_taste?: Record<string, unknown> | null;
+    }
+  ): Promise<StoredProfile | null> {
+    if (!(await this.ensureChecked())) return null;
+
+    const { data, error } = await this.client!
+      .from('profiles')
+      .upsert(
+        {
+          id: user.id,
+          email: user.email,
+          full_name: user.name ?? null,
+          avatar_url: user.avatarUrl ?? null,
+          ...patch,
+          last_seen_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      )
+      .select('*')
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data as StoredProfile;
   }
 
   /* ── Trips CRUD ──────────────────────────────────────────────────────── */

@@ -575,6 +575,12 @@ tripsRoutes.post('/:id/compose', async (c) => {
     hero_image: heroImage,
   });
 
+  // Save submitted taste profile as the signed-in user's cross-trip Taste Memory
+  const authedUser = await store.verifyAccessToken(c.req.header('Authorization'));
+  if (authedUser) {
+    store.updateProfile(authedUser, { default_taste: taste }).catch(() => {});
+  }
+
   const assistantMsg: ChatMessage = {
     id: `taste-a-${Date.now()}`,
     role: 'assistant',
