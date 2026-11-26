@@ -61,9 +61,18 @@ export const LandingView: React.FC<LandingViewProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    const finalPrompt = (voice.isRecording ? voice.transcript || DEMO_VOICE_PROMPT : prompt).trim();
+    let finalPrompt = prompt.trim();
+    if (voice.isRecording) {
+      const spoken = await voice.stopRecording();
+      if (spoken) {
+        finalPrompt = spoken;
+        setPrompt(spoken);
+      } else {
+        return;
+      }
+    }
     voice.reset();
     onStartTrip(finalPrompt || DEMO_VOICE_PROMPT);
   };
@@ -175,22 +184,36 @@ export const LandingView: React.FC<LandingViewProps> = ({
           transition={{ duration: 0.45, delay: 0.1 }}
           className="w-full max-w-[650px] rounded-[24px] bg-white border border-black/[0.09] shadow-[0_14px_42px_rgba(14,32,52,0.09)] px-4 sm:px-5 pt-4 pb-3 space-y-2.5"
         >
-          {voice.isRecording ? (
+          {voice.isRecording || voice.isTranscribing ? (
             <div className="space-y-2.5">
               <div className="text-[15.5px] text-[#14191F] min-h-[48px] leading-relaxed">
-                {voice.transcript || 'Listening...'}
+                {voice.isTranscribing ? (
+                  <span className="thinking-shimmer text-[#5A626A]">Transcribing your trip idea...</span>
+                ) : voice.transcript ? (
+                  voice.transcript
+                ) : (
+                  <span className="text-[#7B828A]">
+                    {voice.mode === 'recorder'
+                      ? 'Listening — tap Stop to fill your prompt or ↑ to start...'
+                      : 'Listening — tell Vesper where you want to go...'}
+                  </span>
+                )}
               </div>
               <div className="flex items-center justify-between w-full gap-3 pt-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    voice.stopRecording();
-                    setPrompt(voice.transcript);
+                  disabled={voice.isTranscribing}
+                  onClick={async () => {
+                    const spoken = await voice.stopRecording();
+                    if (spoken) {
+                      setPrompt((prev) => (prev.trim() ? `${prev.trim()} ${spoken}` : spoken));
+                    }
                   }}
-                  className="w-8 h-8 rounded-full hover:bg-black/[0.05] flex items-center justify-center text-[#14191F] cursor-pointer"
-                  title="Stop voice input"
+                  className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200/80 text-rose-700 text-[12px] font-medium cursor-pointer disabled:opacity-50"
+                  title="Stop listening and fill prompt box"
                 >
-                  <Square className="w-3.5 h-3.5" />
+                  <Square className="w-3 h-3 fill-rose-600 text-rose-600" />
+                  <span>Stop</span>
                 </button>
 
                 <div className="flex-1 flex items-center justify-end gap-[2.5px] h-7 overflow-hidden">
@@ -198,15 +221,17 @@ export const LandingView: React.FC<LandingViewProps> = ({
                     <motion.span
                       key={i}
                       animate={{ height: h }}
-                      transition={{ duration: 0.09 }}
-                      className="w-[2px] rounded-full bg-[#5A626A]/75 shrink-0"
+                      transition={{ duration: 0.08 }}
+                      className="w-[2px] rounded-full bg-[#C85A17]/80 shrink-0"
                     />
                   ))}
                 </div>
 
                 <button
                   type="submit"
-                  className="w-9 h-9 rounded-full bg-[#0E2034] flex items-center justify-center cursor-pointer shrink-0 shadow-xs"
+                  disabled={voice.isTranscribing}
+                  className="w-9 h-9 rounded-full bg-[#0E2034] hover:bg-[#17304D] flex items-center justify-center cursor-pointer shrink-0 shadow-xs disabled:opacity-50"
+                  style={{ color: '#FFFFFF' }}
                   title="Send voice prompt"
                 >
                   <ArrowUp className="w-4 h-4" />
@@ -218,7 +243,10 @@ export const LandingView: React.FC<LandingViewProps> = ({
               <textarea
                 rows={2}
                 value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
+                onChange={(e) => {
+                  if (voice.error) voice.clearError();
+                  setPrompt(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -228,10 +256,15 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 placeholder={ROTATING_PLACEHOLDERS[placeholderIdx]}
                 className="w-full resize-none bg-transparent text-[15.5px] sm:text-[16px] leading-[1.5] text-[#14191F] placeholder:text-[#7B828A] focus:outline-none min-h-[48px]"
               />
+              {voice.error && (
+                <div className="text-[12px] text-rose-600 bg-rose-50/80 border border-rose-200/70 rounded-xl px-3 py-1.5">
+                  {voice.error}
+                </div>
+              )}
               <div className="flex items-center justify-end gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={voice.startRecording}
+                  onClick={() => voice.startRecording()}
                   className="w-9 h-9 rounded-full hover:bg-black/[0.05] text-[#4A535C] flex items-center justify-center transition-colors cursor-pointer shrink-0"
                   title="Speak to Vesper"
                   aria-label="Speak to Vesper"

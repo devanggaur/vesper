@@ -513,6 +513,16 @@ export const travelApi = {
     });
   },
 
+  async transcribeVoice(
+    audioBase64: string,
+    mimeType: string
+  ): Promise<{ transcript: string }> {
+    return apiFetch('/api/voice/transcribe', {
+      method: 'POST',
+      body: JSON.stringify({ audioBase64, mimeType }),
+    });
+  },
+
   /* ── Local Seed Fallback Helpers (used when offline or for Flight GDS Phase 3) ── */
 
   getDiscoverCatalog(_destination = 'Mexico City'): DiscoverCatalog {

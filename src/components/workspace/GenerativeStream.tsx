@@ -347,9 +347,14 @@ export const GenerativeStream: React.FC<GenerativeStreamProps> = ({
       ? ['What pairs well nearby after this?', 'Organize my itinerary into days']
       : [];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const text = (voice.isRecording ? voice.transcript || VOICE_DEMO_TEXT : inputValue).trim();
+    let text = inputValue.trim();
+    if (voice.isRecording) {
+      const spoken = await voice.stopRecording();
+      if (spoken) text = spoken;
+      else return;
+    }
     if (!text) return;
     setInputValue('');
     voice.reset();
@@ -771,72 +776,97 @@ export const GenerativeStream: React.FC<GenerativeStreamProps> = ({
               onSubmit={handleSubmit}
               className="rounded-[20px] bg-white border border-black/[0.1] px-4 py-2.5 shadow-[0_8px_28px_rgba(14,32,52,0.08)]"
             >
-              {voice.isRecording ? (
+              {voice.isRecording || voice.isTranscribing ? (
                 <div className="space-y-2">
                   <div className="text-[12.5px] text-[#14191F] line-clamp-2 min-h-[18px]">
-                    {voice.transcript || 'Listening...'}
+                    {voice.isTranscribing ? (
+                      <span className="thinking-shimmer text-[#5A626A]">Transcribing...</span>
+                    ) : voice.transcript ? (
+                      voice.transcript
+                    ) : (
+                      <span className="text-[#7B828A]">Listening...</span>
+                    )}
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        voice.stopRecording();
-                        setInputValue(voice.transcript);
+                      disabled={voice.isTranscribing}
+                      onClick={async () => {
+                        const spoken = await voice.stopRecording();
+                        if (spoken) {
+                          setInputValue((prev) => (prev.trim() ? `${prev.trim()} ${spoken}` : spoken));
+                        }
                       }}
-                      className="w-7 h-7 rounded-lg hover:bg-black/[0.05] flex items-center justify-center text-[#14191F] cursor-pointer"
+                      className="inline-flex items-center gap-1 px-2 h-7 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200/80 text-rose-700 text-[11px] font-medium cursor-pointer disabled:opacity-50"
+                      title="Stop listening and fill input"
                     >
-                      <Square className="w-3.5 h-3.5" />
+                      <Square className="w-2.5 h-2.5 fill-rose-600 text-rose-600" />
+                      <span>Stop</span>
                     </button>
                     <div className="flex-1 flex items-center justify-end gap-[2px] h-5 overflow-hidden">
                       {voice.waveBars.map((h, i) => (
                         <motion.span
                           key={i}
                           animate={{ height: h }}
-                          transition={{ duration: 0.09 }}
-                          className="w-[2px] rounded-full bg-[#5A626A]/75 shrink-0"
+                          transition={{ duration: 0.08 }}
+                          className="w-[2px] rounded-full bg-[#C85A17]/80 shrink-0"
                         />
                       ))}
                     </div>
                     <button
                       type="submit"
-                      className="w-8 h-8 rounded-full bg-[#0E2034] flex items-center justify-center cursor-pointer"
+                      disabled={voice.isTranscribing}
+                      className="w-8 h-8 rounded-full bg-[#0E2034] flex items-center justify-center cursor-pointer disabled:opacity-50"
+                      style={{ color: '#FFFFFF' }}
+                      title="Send voice message"
                     >
                       <ArrowUp className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    placeholder={
-                      sheetTarget
-                        ? `Ask Vesper about ${
-                            sheetTarget.kind === 'activity' ? 'this experience' : sheetTarget.item.name
-                          }...`
-                        : `Ask Vesper anything about ${destination || 'your trip'}...`
-                    }
-                    className="flex-1 bg-transparent text-[13.5px] text-[#14191F] placeholder:text-[#7B828A] focus:outline-none min-w-0"
-                  />
-                  <button
-                    type="button"
-                    onClick={voice.startRecording}
-                    className="w-8 h-8 rounded-full hover:bg-black/[0.05] flex items-center justify-center text-[#5A626A] hover:text-[#14191F] transition-colors cursor-pointer shrink-0"
-                    title="Voice input"
-                    aria-label="Voice input"
-                  >
-                    <Mic className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={!inputValue.trim()}
-                    className="w-8 h-8 rounded-full bg-[#0E2034] hover:bg-[#17304D] disabled:opacity-35 flex items-center justify-center transition-all cursor-pointer shrink-0"
-                    aria-label="Send message"
-                  >
-                    <ArrowUp className="w-4 h-4" />
-                  </button>
+                <div className="space-y-1.5">
+                  {voice.error && (
+                    <div className="text-[11.5px] text-rose-600 bg-rose-50/80 border border-rose-200/70 rounded-lg px-2.5 py-1">
+                      {voice.error}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={inputValue}
+                      onChange={(e) => {
+                        if (voice.error) voice.clearError();
+                        setInputValue(e.target.value);
+                      }}
+                      placeholder={
+                        sheetTarget
+                          ? `Ask Vesper about ${
+                              sheetTarget.kind === 'activity' ? 'this experience' : sheetTarget.item.name
+                            }...`
+                          : `Ask Vesper anything about ${destination || 'your trip'}...`
+                      }
+                      className="flex-1 bg-transparent text-[13.5px] text-[#14191F] placeholder:text-[#7B828A] focus:outline-none min-w-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => voice.startRecording()}
+                      className="w-8 h-8 rounded-full hover:bg-black/[0.05] flex items-center justify-center text-[#5A626A] hover:text-[#14191F] transition-colors cursor-pointer shrink-0"
+                      title="Voice input"
+                      aria-label="Voice input"
+                    >
+                      <Mic className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!inputValue.trim()}
+                      className="w-8 h-8 rounded-full bg-[#0E2034] hover:bg-[#17304D] disabled:opacity-35 flex items-center justify-center transition-all cursor-pointer shrink-0"
+                      style={{ color: '#FFFFFF' }}
+                      aria-label="Send message"
+                    >
+                      <ArrowUp className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               )}
             </form>

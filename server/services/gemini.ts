@@ -1042,3 +1042,53 @@ Where:
 
   throw lastError ?? new Error('Streaming Co-Pilot failed across all models');
 }
+
+/**
+ * Transcribes a short spoken travel prompt using Gemini multimodal audio understanding.
+ * Powers the universal fallback path when a browser doesn't support Web Speech API (e.g., Firefox).
+ */
+export async function transcribeVoiceAudio(
+  audioBase64: string,
+  mimeType = 'audio/webm'
+): Promise<string> {
+  // Normalize codec suffixes like "audio/webm;codecs=opus" -> "audio/webm"
+  const cleanMime = (mimeType.split(';')[0] || 'audio/webm').trim().toLowerCase();
+  let lastError: unknown;
+
+  for (const model of config.geminiModels) {
+    if (isModelCoolingDown(model) && model !== config.geminiModels[config.geminiModels.length - 1]) {
+      continue;
+    }
+    try {
+      const interaction = await withTimeout(
+        ai.interactions.create({
+          model,
+          input: [
+            {
+              type: 'text',
+              text: 'Transcribe this spoken travel request accurately into clean, natural text. Fix punctuation and destination/restaurant spellings (e.g., Oaxaca, Kyoto, Chiado, Lisbon, Amalfi). Return ONLY the transcribed request with no quotes, labels, or extra commentary. If no speech is audible, return an empty string.',
+            },
+            {
+              type: 'audio',
+              data: audioBase64,
+              mime_type: cleanMime,
+            },
+          ],
+          store: false,
+        }),
+        14000,
+        `gemini-audio:${model}`
+      );
+      return (interaction.output_text || '').trim().replace(/^["']|["']$/g, '').trim();
+    } catch (err) {
+      lastError = err;
+      markModelCooldown(model, err);
+      console.warn(
+        `[gemini-audio] model ${model} failed, trying fallback:`,
+        (err as Error)?.message?.slice(0, 140)
+      );
+    }
+  }
+
+  throw lastError ?? new Error('Voice transcription failed across all models');
+}
