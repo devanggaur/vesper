@@ -13,7 +13,6 @@ import {
   Loader2,
   Check,
   Sparkles,
-  ExternalLink,
   Clock,
   X,
 } from 'lucide-react';
@@ -793,44 +792,7 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
               <span>Reset</span>
             </button>
           )}
-
-          {flightData?.source && (
-            <span
-              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium shrink-0 ${
-                flightData.source === 'serpapi' || flightData.source === 'amadeus'
-                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                  : 'bg-[#ECEAE2] text-[#5A626A]'
-              }`}
-            >
-              <Sparkles
-                className={`w-3 h-3 ${
-                  flightData.source === 'serpapi' || flightData.source === 'amadeus'
-                    ? 'text-emerald-600'
-                    : 'text-[#C85A17]'
-                }`}
-              />
-              <span>
-                {flightData.source === 'serpapi'
-                  ? `Live Google Flights${flightData.outboundDate ? ` · ${flightData.outboundDate}` : ''}`
-                  : flightData.source === 'amadeus'
-                  ? 'Live GDS fares'
-                  : 'Route estimate'}
-              </span>
-            </span>
-          )}
         </div>
-
-        {flightData?.providerBookingUrl && (
-          <a
-            href={flightData.providerBookingUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#14191F] hover:underline shrink-0"
-          >
-            <span>Live Google Flights</span>
-            <ExternalLink className="w-3 h-3" />
-          </a>
-        )}
       </div>
 
       {/* Step Content Container */}

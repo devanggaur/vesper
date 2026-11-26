@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BedDouble, Plane, ArrowRight, CheckCircle2, Award, X, Sparkles, ExternalLink, Users } from 'lucide-react';
+import { BedDouble, Plane, ArrowRight, CheckCircle2, Award, X, Users } from 'lucide-react';
 import {
   CollabEntityKind,
   FareClass,
@@ -211,35 +211,48 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
         </div>
       </div>
 
-      {/* Sub-tab Switcher: Boutique Stays | Round-Trip Flights */}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onChangeSubTab('stays')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium border transition-all cursor-pointer ${
-            subTab === 'stays'
-              ? 'bg-[#0E2034] border-[#0E2034] shadow-xs'
-              : 'bg-white text-[#2C333A] border-black/[0.09] hover:border-black/[0.22]'
-          }`}
-        >
-          <BedDouble className="w-4 h-4" />
-          <span>Boutique Stays</span>
-          {bookedHotel && <span className="text-[11px] opacity-80">✓</span>}
-        </button>
+      {/* Sub-tab Switcher: Boutique Stays | Round-Trip Flights (+ right-aligned Poll Group) */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onChangeSubTab('stays')}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium border transition-all cursor-pointer ${
+              subTab === 'stays'
+                ? 'bg-[#0E2034] border-[#0E2034] shadow-xs'
+                : 'bg-white text-[#2C333A] border-black/[0.09] hover:border-black/[0.22]'
+            }`}
+          >
+            <BedDouble className="w-4 h-4" />
+            <span>Boutique Stays</span>
+            {bookedHotel && <span className="text-[11px] opacity-80">✓</span>}
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onChangeSubTab('flights')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium border transition-all cursor-pointer ${
-            subTab === 'flights'
-              ? 'bg-[#0E2034] border-[#0E2034] shadow-xs'
-              : 'bg-white text-[#2C333A] border-black/[0.09] hover:border-black/[0.22]'
-          }`}
-        >
-          <Plane className="w-4 h-4" />
-          <span>Flights · {destination}</span>
-          {bookedFlight && <span className="text-[11px] opacity-80">✓</span>}
-        </button>
+          <button
+            type="button"
+            onClick={() => onChangeSubTab('flights')}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium border transition-all cursor-pointer ${
+              subTab === 'flights'
+                ? 'bg-[#0E2034] border-[#0E2034] shadow-xs'
+                : 'bg-white text-[#2C333A] border-black/[0.09] hover:border-black/[0.22]'
+            }`}
+          >
+            <Plane className="w-4 h-4" />
+            <span>Flights · {destination}</span>
+            {bookedFlight && <span className="text-[11px] opacity-80">✓</span>}
+          </button>
+        </div>
+
+        {onOpenSharePoll && (
+          <button
+            type="button"
+            onClick={onOpenSharePoll}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white hover:bg-[#FAF9F5] border border-black/[0.1] text-[12.5px] font-medium text-[#14191F] transition-colors cursor-pointer shrink-0"
+          >
+            <Users className="w-3.5 h-3.5 text-[#C85A17]" />
+            <span>Poll group</span>
+          </button>
+        )}
       </div>
 
       {/* Strategic Right-Moment Loyalty Banner (Stays -> Hotel Chains | Flights -> Airlines) */}
@@ -330,61 +343,12 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-2 flex-wrap -mb-3">
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium ${
-                liveHotelRes?.source === 'serpapi'
-                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                  : 'bg-[#ECEAE2] text-[#5A626A]'
-              }`}
-            >
-              <Sparkles
-                className={`w-3 h-3 ${
-                  liveHotelRes?.source === 'serpapi' ? 'text-emerald-600' : 'text-[#C85A17]'
-                }`}
-              />
-              <span>
-                {isLoadingHotels
-                  ? 'Checking live hotel rates...'
-                  : liveHotelRes?.source === 'serpapi'
-                  ? `Live Google Hotels · ${liveHotelRes.checkInDate} → ${liveHotelRes.checkOutDate}`
-                  : 'Curated stays · Direct hotel links'}
-              </span>
-            </span>
-
-            <div className="flex items-center gap-3">
-              {onOpenSharePoll && (
-                <button
-                  type="button"
-                  onClick={onOpenSharePoll}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-[#FAF9F5] border border-black/[0.1] text-[12px] font-semibold text-[#14191F] transition-colors cursor-pointer"
-                >
-                  <Users className="w-3.5 h-3.5 text-[#C85A17]" />
-                  <span>Poll group on stays</span>
-                </button>
-              )}
-              <a
-                href={
-                  liveHotelRes?.googleHotelsUrl ||
-                  `https://www.google.com/travel/hotels?q=${encodeURIComponent(
-                    `hotels in ${destination} ${datesLabel}`
-                  )}`
-                }
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#14191F] hover:underline"
-              >
-                <span>Live Google Hotels</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-          </div>
-
           <HotelSearchCarousel
             location={destination}
             dates={datesLabel}
             guests={`1 room, ${travelers}`}
             hotels={hotels}
+            isLoading={isLoadingHotels && hotels.length === 0}
             likedIds={likedIds}
             votes={votes}
             notes={notes}

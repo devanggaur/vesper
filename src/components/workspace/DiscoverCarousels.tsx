@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,12 +9,12 @@ import {
   Clock,
   ArrowRight,
   ChevronDown,
-  SlidersHorizontal,
   DollarSign,
   Award,
   Sparkles,
   ThumbsUp,
   MessageSquare,
+  X,
 } from 'lucide-react';
 import {
   ActivityItem,
@@ -337,6 +337,7 @@ interface HotelSearchCarouselProps {
   dates: string;
   guests: string;
   hotels: HotelItem[];
+  isLoading?: boolean;
   likedIds: Set<string>;
   votes?: TripVote[];
   notes?: TripNote[];
@@ -347,11 +348,15 @@ interface HotelSearchCarouselProps {
   onHoverId: (id: string | null) => void;
 }
 
+type HotelStarsFilter = 'any' | '4plus' | '5only';
+type HotelSortMode = 'best' | 'price' | 'rating' | 'reviews';
+
 export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
   location,
   dates,
   guests,
   hotels,
+  isLoading = false,
   likedIds,
   votes = [],
   notes = [],
@@ -362,8 +367,32 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
   onHoverId,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [fourPlusOnly, setFourPlusOnly] = useState(true);
-  const [sortBy, setSortBy] = useState<'best' | 'price'>('best');
+  const filterBarRef = useRef<HTMLDivElement>(null);
+  const [starsFilter, setStarsFilter] = useState<HotelStarsFilter>('any');
+  const [maxPricePerNight, setMaxPricePerNight] = useState<number | null>(null);
+  const [minRating, setMinRating] = useState<number>(0);
+  const [sortBy, setSortBy] = useState<HotelSortMode>('best');
+  const [openMenu, setOpenMenu] = useState<'stars' | 'price' | 'rating' | 'sort' | null>(null);
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (filterBarRef.current && !filterBarRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenMenu(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [openMenu]);
+
+  const getNightlyPrice = (h: HotelItem) => h.pricePerNight || Math.round(h.priceTotal / 3);
 
   const voteCountFor = (hotelId: string) =>
     votes.filter((v) => v.entityId === hotelId && v.vote === 'up').length;
@@ -371,13 +400,43 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
   const maxHotelVotes = hotels.reduce((m, h) => Math.max(m, voteCountFor(h.id)), 0);
 
   const filtered = [...hotels]
-    .filter((h) => (!fourPlusOnly ? true : h.stars >= 4))
+    .filter((h) => {
+      if (starsFilter === '4plus' && h.stars < 4) return false;
+      if (starsFilter === '5only' && h.stars < 5) return false;
+      if (maxPricePerNight !== null && getNightlyPrice(h) > maxPricePerNight) return false;
+      if (minRating > 0 && h.rating < minRating) return false;
+      return true;
+    })
     .sort((a, b) => {
       if (sortBy === 'price') return a.priceTotal - b.priceTotal;
+      if (sortBy === 'rating') return b.rating - a.rating;
+      if (sortBy === 'reviews') return b.reviews - a.reviews;
       const vDiff = voteCountFor(b.id) - voteCountFor(a.id);
       if (vDiff !== 0) return vDiff;
       return b.rating - a.rating;
     });
+
+  const hasActiveFilters =
+    starsFilter !== 'any' || maxPricePerNight !== null || minRating > 0;
+
+  const resetFilters = () => {
+    setStarsFilter('any');
+    setMaxPricePerNight(null);
+    setMinRating(0);
+  };
+
+  const starsPillLabel =
+    starsFilter === '5only' ? '5 stars' : starsFilter === '4plus' ? '4+ stars' : 'Stars';
+  const pricePillLabel = maxPricePerNight !== null ? `≤ $${maxPricePerNight}/n` : 'Price';
+  const ratingPillLabel = minRating > 0 ? `${minRating.toFixed(1)}+` : 'Rating';
+  const sortPillLabel =
+    sortBy === 'price'
+      ? 'Lowest price'
+      : sortBy === 'rating'
+      ? 'Highest rated'
+      : sortBy === 'reviews'
+      ? 'Most reviewed'
+      : 'Best';
 
   const scrollBy = (dir: number) => {
     scrollRef.current?.scrollBy({ left: dir * 320, behavior: 'smooth' });
@@ -401,70 +460,294 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
         </div>
       </div>
 
-      {/* Filter Pills */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-          <button
-            onClick={() => setFourPlusOnly((v) => !v)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 transition-colors cursor-pointer ${
-              fourPlusOnly
-                ? 'bg-[#0E2034] text-white border-[#0E2034]'
-                : 'bg-white text-[#2C333A] border-black/[0.1]'
-            }`}
-          >
-            <Star className="w-3 h-3 fill-current" />
-            <span>4+ stars</span>
-            <ChevronDown className="w-3 h-3" />
-          </button>
+      {/* Interactive Hotel Filter & Sort Dropdowns */}
+      <div
+        ref={filterBarRef}
+        className="flex items-center justify-between gap-2 flex-wrap relative z-30"
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 1. Stars Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenMenu((m) => (m === 'stars' ? null : 'stars'))}
+              aria-expanded={openMenu === 'stars'}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 transition-colors cursor-pointer ${
+                starsFilter !== 'any' || openMenu === 'stars'
+                  ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                  : 'bg-white text-[#2C333A] border-black/[0.1] hover:border-black/[0.25]'
+              }`}
+              style={
+                starsFilter !== 'any' || openMenu === 'stars' ? { color: '#FFFFFF' } : undefined
+              }
+            >
+              <Star className="w-3 h-3" />
+              <span>{starsPillLabel}</span>
+              <ChevronDown
+                className={`w-3 h-3 transition-transform ${openMenu === 'stars' ? 'rotate-180' : ''}`}
+              />
+            </button>
 
-          <button
-            onClick={() => setSortBy((s) => (s === 'price' ? 'best' : 'price'))}
-            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 cursor-pointer ${
-              sortBy === 'price'
-                ? 'bg-[#0E2034] text-white border-[#0E2034]'
-                : 'bg-white text-[#2C333A] border-black/[0.1]'
-            }`}
-          >
-            <DollarSign className="w-3 h-3" />
-            <span>Price</span>
-            <ChevronDown className="w-3 h-3" />
-          </button>
+            {openMenu === 'stars' && (
+              <div className="absolute left-0 top-full mt-1.5 w-48 rounded-2xl bg-white border border-black/[0.1] shadow-xl p-2 space-y-1 z-40">
+                {(
+                  [
+                    { id: 'any', label: 'Any stars', count: hotels.length },
+                    { id: '4plus', label: '4+ stars', count: hotels.filter((h) => h.stars >= 4).length },
+                    { id: '5only', label: '5 stars only', count: hotels.filter((h) => h.stars >= 5).length },
+                  ] as const
+                ).map((opt) => {
+                  const selected = starsFilter === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setStarsFilter(opt.id);
+                        setOpenMenu(null);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[12.5px] transition-colors cursor-pointer ${
+                        selected
+                          ? 'bg-[#F3F2EC] font-semibold text-[#14191F]'
+                          : 'text-[#2C333A] hover:bg-[#FAF9F5]'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      <span className="font-tabular text-[11px] text-[#7B828A]">{opt.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-medium border bg-white text-[#2C333A] border-black/[0.1] shrink-0">
-            <Award className="w-3 h-3 text-[#7B828A]" />
-            <span>Rating</span>
-            <ChevronDown className="w-3 h-3 text-[#7B828A]" />
-          </span>
+          {/* 2. Price Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenMenu((m) => (m === 'price' ? null : 'price'))}
+              aria-expanded={openMenu === 'price'}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 transition-colors cursor-pointer ${
+                maxPricePerNight !== null || openMenu === 'price'
+                  ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                  : 'bg-white text-[#2C333A] border-black/[0.1] hover:border-black/[0.25]'
+              }`}
+              style={
+                maxPricePerNight !== null || openMenu === 'price'
+                  ? { color: '#FFFFFF' }
+                  : undefined
+              }
+            >
+              <DollarSign className="w-3 h-3" />
+              <span>{pricePillLabel}</span>
+              <ChevronDown
+                className={`w-3 h-3 transition-transform ${openMenu === 'price' ? 'rotate-180' : ''}`}
+              />
+            </button>
 
-          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-medium border bg-white text-[#2C333A] border-black/[0.1] shrink-0">
-            <SlidersHorizontal className="w-3 h-3 text-[#7B828A]" />
-            <span>Filters</span>
-          </span>
+            {openMenu === 'price' && (
+              <div className="absolute left-0 top-full mt-1.5 w-64 rounded-2xl bg-white border border-black/[0.1] shadow-xl p-3.5 space-y-3 z-40">
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="font-semibold text-[#14191F]">Max price / night</span>
+                  <span className="font-tabular text-[#5A626A]">
+                    {maxPricePerNight !== null ? `Up to $${maxPricePerNight}` : 'Any'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { label: 'Any price', val: null },
+                    { label: 'Under $250/n', val: 250 },
+                    { label: 'Under $350/n', val: 350 },
+                    { label: 'Under $500/n', val: 500 },
+                  ].map((preset) => {
+                    const active = maxPricePerNight === preset.val;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setMaxPricePerNight(preset.val)}
+                        className={`px-2.5 py-1.5 rounded-xl text-[11.5px] font-medium border transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                            : 'bg-[#FAF9F5] text-[#2C333A] border-black/[0.08] hover:border-black/[0.2]'
+                        }`}
+                        style={active ? { color: '#FFFFFF' } : undefined}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="space-y-1">
+                  <input
+                    type="range"
+                    min={120}
+                    max={800}
+                    step={20}
+                    value={maxPricePerNight ?? 800}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setMaxPricePerNight(v >= 800 ? null : v);
+                    }}
+                    className="w-full accent-[#0E2034] cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10.5px] font-tabular text-[#7B828A]">
+                    <span>$120/n</span>
+                    <span>$800+/n</span>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setOpenMenu(null)}
+                    className="px-3 py-1 rounded-full bg-[#0E2034] text-[11.5px] font-medium cursor-pointer"
+                    style={{ color: '#FFFFFF' }}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Guest Rating Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenMenu((m) => (m === 'rating' ? null : 'rating'))}
+              aria-expanded={openMenu === 'rating'}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 transition-colors cursor-pointer ${
+                minRating > 0 || openMenu === 'rating'
+                  ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                  : 'bg-white text-[#2C333A] border-black/[0.1] hover:border-black/[0.25]'
+              }`}
+              style={minRating > 0 || openMenu === 'rating' ? { color: '#FFFFFF' } : undefined}
+            >
+              <Award className="w-3 h-3" />
+              <span>{ratingPillLabel}</span>
+              <ChevronDown
+                className={`w-3 h-3 transition-transform ${openMenu === 'rating' ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {openMenu === 'rating' && (
+              <div className="absolute left-0 top-full mt-1.5 w-52 rounded-2xl bg-white border border-black/[0.1] shadow-xl p-2 space-y-1 z-40">
+                {[
+                  { val: 0, label: 'Any rating' },
+                  { val: 8.5, label: '8.5+ Very good' },
+                  { val: 9.0, label: '9.0+ Wonderful' },
+                  { val: 9.5, label: '9.5+ Exceptional' },
+                ].map((opt) => {
+                  const selected = minRating === opt.val;
+                  const count = hotels.filter((h) => h.rating >= opt.val).length;
+                  return (
+                    <button
+                      key={opt.val}
+                      type="button"
+                      onClick={() => {
+                        setMinRating(opt.val);
+                        setOpenMenu(null);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[12.5px] transition-colors cursor-pointer ${
+                        selected
+                          ? 'bg-[#F3F2EC] font-semibold text-[#14191F]'
+                          : 'text-[#2C333A] hover:bg-[#FAF9F5]'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      <span className="font-tabular text-[11px] text-[#7B828A]">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11.5px] font-medium text-[#C85A17] hover:bg-black/[0.04] cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+              <span>Reset</span>
+            </button>
+          )}
         </div>
 
-        <button
-          onClick={() => setSortBy((s) => (s === 'best' ? 'price' : 'best'))}
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-medium border bg-white text-[#2C333A] border-black/[0.1] shrink-0 cursor-pointer"
-        >
-          <Sparkles className="w-3 h-3 text-[#7B828A]" />
-          <span>{sortBy === 'best' ? 'Best' : 'Lowest'}</span>
-        </button>
+        {/* 4. Sort Dropdown */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setOpenMenu((m) => (m === 'sort' ? null : 'sort'))}
+            aria-expanded={openMenu === 'sort'}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 transition-colors cursor-pointer ${
+              openMenu === 'sort'
+                ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                : 'bg-white text-[#2C333A] border-black/[0.1] hover:border-black/[0.25]'
+            }`}
+            style={openMenu === 'sort' ? { color: '#FFFFFF' } : undefined}
+          >
+            <Sparkles className="w-3 h-3" />
+            <span>{sortPillLabel}</span>
+            <ChevronDown
+              className={`w-3 h-3 transition-transform ${openMenu === 'sort' ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {openMenu === 'sort' && (
+            <div className="absolute right-0 top-full mt-1.5 w-48 rounded-2xl bg-white border border-black/[0.1] shadow-xl p-2 space-y-1 z-40">
+              {(
+                [
+                  { id: 'best', label: 'Best match' },
+                  { id: 'price', label: 'Lowest price' },
+                  { id: 'rating', label: 'Highest rated' },
+                  { id: 'reviews', label: 'Most reviewed' },
+                ] as const
+              ).map((opt) => {
+                const selected = sortBy === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setSortBy(opt.id);
+                      setOpenMenu(null);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[12.5px] transition-colors cursor-pointer ${
+                      selected
+                        ? 'bg-[#F3F2EC] font-semibold text-[#14191F]'
+                        : 'text-[#2C333A] hover:bg-[#FAF9F5]'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {selected && <Check className="w-3.5 h-3.5 text-[#0E2034]" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Results Header + Arrows */}
       <div className="flex items-center justify-between">
         <span className="text-[12.5px] font-medium text-[#5A626A]">
-          Top {filtered.length} of 370 available hotels.
+          {isLoading
+            ? `Finding stays in ${location}...`
+            : `${filtered.length} ${filtered.length === 1 ? 'stay' : 'stays'} in ${location}`}
         </span>
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => scrollBy(-1)}
+            aria-label="Scroll stays left"
             className="w-7 h-7 rounded-full border border-black/[0.1] bg-white hover:bg-black/[0.03] flex items-center justify-center text-[#4A535C] cursor-pointer"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={() => scrollBy(1)}
+            aria-label="Scroll stays right"
             className="w-7 h-7 rounded-full border border-black/[0.1] bg-white hover:bg-black/[0.03] flex items-center justify-center text-[#4A535C] cursor-pointer"
           >
             <ChevronRight className="w-4 h-4" />
@@ -472,7 +755,25 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
         </div>
       </div>
 
-      {/* Horizontal Hotel Cards */}
+      {/* Horizontal Hotel Cards (or Empty Filter State) */}
+      {filtered.length === 0 ? (
+        <div className="rounded-[20px] bg-white border border-black/[0.08] p-6 text-center space-y-2.5">
+          <div className="text-[13.5px] font-semibold text-[#14191F]">
+            No stays match your current filters
+          </div>
+          <p className="text-[12px] text-[#7B828A]">
+            Try widening your nightly budget, star class, or minimum rating.
+          </p>
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0E2034] text-[12px] font-medium cursor-pointer"
+            style={{ color: '#FFFFFF' }}
+          >
+            <span>Reset filters</span>
+          </button>
+        </div>
+      ) : (
       <div ref={scrollRef} className="flex gap-3 sm:gap-3.5 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-1 -mx-1 px-1">
         {filtered.map((hotel) => {
           const hotelUpvotes = votes.filter((v) => v.entityId === hotel.id && v.vote === 'up');
@@ -612,6 +913,7 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
           );
         })}
       </div>
+      )}
     </div>
   );
 };
