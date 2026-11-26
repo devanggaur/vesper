@@ -1163,9 +1163,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       )}
 
       {/* Top-Left Day Route Filter Bar + Play My Day Trigger */}
-      <div className="absolute top-3.5 left-3.5 z-[20] flex flex-wrap items-center gap-1.5 max-w-[calc(100%-220px)]">
+      <div className="absolute top-3 left-3 sm:top-3.5 sm:left-3.5 z-[20] flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-1.5 max-w-[calc(100%-64px)] lg:max-w-[calc(100%-230px)]">
         <div
-          className="flex items-center gap-1 rounded-full p-1 shadow-md border backdrop-blur-md"
+          className="flex items-center gap-1 rounded-full p-1 shadow-md border backdrop-blur-md overflow-x-auto no-scrollbar max-w-full"
           style={{
             backgroundColor: 'var(--v-surface)',
             borderColor: 'var(--v-border-strong)',
@@ -1178,7 +1178,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               setIsPlaying(false);
               setDayFilter('All');
             }}
-            className={`px-2.5 py-1 rounded-full text-[11.5px] font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-full text-[11.5px] font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
               dayFilter === 'All' ? 'bg-[#0E2034]' : 'text-[#5A626A] hover:text-[#14191F]'
             }`}
           >
@@ -1196,7 +1196,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
                   setIsPlaying(false);
                   setDayFilter(m.key);
                 }}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium transition-colors cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                   active ? 'bg-[#0E2034]' : 'text-[#5A626A] hover:text-[#14191F]'
                 }`}
               >
@@ -1213,7 +1213,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             type="button"
             onClick={startPlayMyDay}
             title="Preview your day route chronologically"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white border border-black/[0.1] shadow-md text-[11.5px] font-semibold text-[#14191F] transition-all active:scale-95 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white border border-black/[0.1] shadow-md text-[11.5px] font-semibold text-[#14191F] whitespace-nowrap shrink-0 transition-all active:scale-95 cursor-pointer"
           >
             <Play className="w-3 h-3 fill-[#C85A17] text-[#C85A17]" />
             <span>Preview</span>
@@ -1222,7 +1222,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       </div>
 
       {/* Top-Right Compact Control Stack: Zoom + Circle-to-Ask + Stay Gravity */}
-      <div className="absolute top-3.5 right-3.5 z-[20] flex flex-col items-center gap-2">
+      <div className="absolute top-3 right-3 sm:top-3.5 sm:right-3.5 z-[20] flex flex-col items-center gap-2">
         <div className="flex flex-col rounded-full bg-white/95 shadow-md border border-black/[0.08] overflow-hidden">
           <button
             type="button"

@@ -299,114 +299,127 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
     <LayoutGroup id="vesper-itinerary-flow">
       <div className="max-w-[820px] mx-auto w-full space-y-5 pb-20 lg:pb-12">
         {/* Editorial Hero Banner with 1-Click Editable Dates & Travelers */}
-        <div className="relative h-[185px] sm:h-[210px] rounded-[24px] overflow-hidden shadow-sm border border-black/[0.06]">
-          <SmartImage src={bannerImage} alt={destination} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/32 to-black/10" />
-
-          {/* Top-Right Quick Actions */}
-          <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
-            {[
-              { icon: CalendarPlus, label: 'Export .ics', action: handleExportICS },
-              { icon: Copy, label: 'Copy itinerary', action: handleCopyDoc },
-              { icon: Share, label: 'Copy share link', action: handleShareLink },
-            ].map((btn) => (
-              <button
-                key={btn.label}
-                onClick={btn.action}
-                title={btn.label}
-                className="w-8 h-8 rounded-full bg-black/45 hover:bg-black/65 backdrop-blur-md text-white flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <btn.icon className="w-4 h-4" strokeWidth={1.7} />
-              </button>
-            ))}
+        <div className="relative rounded-[24px] shadow-sm border border-black/[0.06] text-white">
+          {/* Background Image & Gradient Scrim */}
+          <div className="absolute inset-0 rounded-[24px] overflow-hidden pointer-events-none">
+            <SmartImage src={bannerImage} alt={destination} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/42 to-black/25" />
           </div>
 
-          <div className="absolute bottom-4 left-5 right-5 flex flex-col sm:flex-row sm:items-end justify-between gap-2 text-white">
-            <div className="min-w-0">
-              {!readOnly && (onUpdateDates || onUpdateTravelers) ? (
-                <div className="flex items-center flex-wrap gap-1.5 mb-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/80 mr-1">
-                    {destination}
-                  </span>
-                  {onUpdateDates && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowDatePicker(true);
-                        setShowGuestPicker(false);
-                      }}
-                      title="Edit trip dates"
-                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/20 text-[11px] font-medium text-white transition-colors cursor-pointer"
-                    >
-                      <Calendar className="w-3 h-3 opacity-85" />
-                      <span className="font-tabular">{datesLabel || 'Add dates'}</span>
-                    </button>
-                  )}
-                  {onUpdateTravelers && (
-                    <div className="relative">
+          {/* Foreground Flex Layout — Guaranteed Zero Overlap Across All Screen Sizes */}
+          <div className="relative z-10 min-h-[214px] sm:min-h-[220px] p-4 sm:p-5 flex flex-col justify-between gap-4">
+            {/* Top Row: Destination Kicker + Quick Actions */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/85 truncate">
+                {destination}
+              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {[
+                  { icon: CalendarPlus, label: 'Export .ics', action: handleExportICS },
+                  { icon: Copy, label: 'Copy itinerary', action: handleCopyDoc },
+                  { icon: Share, label: 'Copy share link', action: handleShareLink },
+                ].map((btn) => (
+                  <button
+                    key={btn.label}
+                    onClick={btn.action}
+                    title={btn.label}
+                    className="w-8 h-8 rounded-full bg-black/45 hover:bg-black/65 backdrop-blur-md text-white flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <btn.icon className="w-4 h-4" strokeWidth={1.7} />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Bottom Content: Title + Pills + Total & Book CTA */}
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3.5">
+              <div className="min-w-0 space-y-2">
+                <h1 className="font-editorial text-[25px] sm:text-[32px] font-normal leading-[1.12] tracking-[-0.01em]">
+                  {tripTitle}
+                </h1>
+
+                {!readOnly && (onUpdateDates || onUpdateTravelers) ? (
+                  <div className="flex items-center flex-wrap gap-1.5">
+                    {onUpdateDates && (
                       <button
                         type="button"
                         onClick={() => {
-                          setShowGuestPicker((v) => !v);
-                          setShowDatePicker(false);
+                          setShowDatePicker(true);
+                          setShowGuestPicker(false);
                         }}
-                        title="Edit travelers"
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/20 text-[11px] font-medium text-white transition-colors cursor-pointer"
+                        title="Edit trip dates"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/20 text-[11.5px] font-medium text-white whitespace-nowrap transition-colors cursor-pointer"
                       >
-                        <Users className="w-3 h-3 opacity-85" />
-                        <span>{travelers}</span>
+                        <Calendar className="w-3 h-3 opacity-85 shrink-0" />
+                        <span className="font-tabular">{datesLabel || 'Add dates'}</span>
                       </button>
-                      {showGuestPicker && (
-                        <div className="absolute left-0 bottom-full mb-1.5 w-36 rounded-2xl bg-white border border-black/[0.1] shadow-xl p-1.5 z-50 text-[#14191F]">
-                          {['Solo', '2 adults', 'Family (4)', 'Group (5+)'].map((opt) => (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() => {
-                                onUpdateTravelers(opt);
-                                setShowGuestPicker(false);
-                              }}
-                              className={`w-full text-left px-3 py-1.5 rounded-xl text-[12px] cursor-pointer ${
-                                travelers === opt
-                                  ? 'bg-[#0E2034] font-medium'
-                                  : 'hover:bg-black/[0.04] text-[#14191F]'
-                              }`}
-                              style={travelers === opt ? { color: '#FFFFFF' } : undefined}
-                            >
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/80">
-                  {destination} · {datesLabel} · {travelers}
-                </div>
-              )}
-              <h1 className="font-editorial text-[26px] sm:text-[32px] font-normal leading-tight">
-                {tripTitle}
-              </h1>
-            </div>
-            <div className="flex items-center gap-2.5 shrink-0">
-              <div className="text-right">
-                <div className="text-[10.5px] text-white/75 uppercase tracking-wider">Trip total</div>
-                <div className="font-tabular text-[20px] font-semibold leading-tight">
-                  ${totalCost.toLocaleString()}
-                </div>
+                    )}
+                    {onUpdateTravelers && (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowGuestPicker((v) => !v);
+                            setShowDatePicker(false);
+                          }}
+                          title="Edit travelers"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/20 text-[11.5px] font-medium text-white whitespace-nowrap transition-colors cursor-pointer"
+                        >
+                          <Users className="w-3 h-3 opacity-85 shrink-0" />
+                          <span>{travelers}</span>
+                        </button>
+                        {showGuestPicker && (
+                          <div className="absolute left-0 top-full mt-1.5 w-36 rounded-2xl bg-white border border-black/[0.1] shadow-xl p-1.5 z-50 text-[#14191F]">
+                            {['Solo', '2 adults', 'Family (4)', 'Group (5+)'].map((opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => {
+                                  onUpdateTravelers(opt);
+                                  setShowGuestPicker(false);
+                                }}
+                                className={`w-full text-left px-3 py-1.5 rounded-xl text-[12px] cursor-pointer ${
+                                  travelers === opt
+                                    ? 'bg-[#0E2034] font-medium'
+                                    : 'hover:bg-black/[0.04] text-[#14191F]'
+                                }`}
+                                style={travelers === opt ? { color: '#FFFFFF' } : undefined}
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-[11.5px] font-medium text-white/80">
+                    {[datesLabel, travelers].filter(Boolean).join(' · ')}
+                  </div>
+                )}
               </div>
-              {!readOnly && (
-                <button
-                  onClick={onOpenBookingCheckout}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-[#14191F] hover:opacity-95 text-[12.5px] font-semibold shadow cursor-pointer"
-                  style={{ backgroundColor: 'var(--v-cta)', color: 'var(--v-cta-text)' }}
-                >
-                  <span>Book</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              )}
+
+              {/* Trip Total + Book CTA: Flush Left/Right on Mobile, Compact Right Cluster on Desktop */}
+              <div className="flex items-center justify-between sm:justify-end gap-3 pt-3 sm:pt-0 border-t border-white/15 sm:border-t-0 shrink-0">
+                <div className="text-left sm:text-right">
+                  <div className="text-[10px] font-medium text-white/75 uppercase tracking-[0.12em]">
+                    Trip total
+                  </div>
+                  <div className="font-tabular text-[22px] sm:text-[21px] font-semibold leading-tight">
+                    ${totalCost.toLocaleString()}
+                  </div>
+                </div>
+                {!readOnly && (
+                  <button
+                    onClick={onOpenBookingCheckout}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-[#14191F] hover:opacity-95 text-[12.5px] font-semibold shadow-sm whitespace-nowrap cursor-pointer"
+                  >
+                    <span>Book</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -494,7 +507,7 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
               <div>
                 <div className="text-[13px] font-semibold text-[#14191F]">Add round-trip flights</div>
                 <div className="text-[11.5px] text-[#7B828A]">
-                  To {roadTrip?.startCity || destination} · {datesLabel}
+                  To {roadTrip?.startCity || destination}{datesLabel ? ` · ${datesLabel}` : ''}
                 </div>
               </div>
             </div>

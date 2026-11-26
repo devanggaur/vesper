@@ -1730,8 +1730,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {/* Segmented `My Trip | Map` Toggle */}
-                      <div className="inline-flex items-center p-0.5 rounded-full bg-[#ECEAE2] border border-black/[0.07]">
+                      {/* Segmented `My Trip | Map` Toggle (Desktop only — mobile uses bottom 3-tab bar) */}
+                      <div className="hidden lg:inline-flex items-center p-0.5 rounded-full bg-[#ECEAE2] border border-black/[0.07]">
                         <span
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0E2034] text-[11.5px] font-semibold shadow-2xs"
                           style={{ color: '#FFFFFF' }}

@@ -90,7 +90,10 @@ export function extractQuickDestination(prompt: string): string {
 
   // 3. Leading place name before trip descriptors ("Kyoto 4-day trip", "Lisbon food & tiles", "Tokyo")
   const stripped = text
-    .replace(/^(hey\s+vesper,?\s*|vesper,?\s*|plan\s+(me\s+)?(a\s+)?(\d+\s*-?\s*day\s+)?)/i, '')
+    .replace(
+      /^(hey\s+vesper,?\s*|vesper,?\s*|plan\s+(me\s+)?(a\s+)?(\d+\s*-?\s*day\s+)?|(?:travel|go|fly|drive|head|trip)\s+to\s+|visit(?:ing)?\s+)/i,
+      ''
+    )
     .trim();
   const leading = cleanCandidate(stripped);
   if (leading && leading.split(/\s+/).length <= 3) {

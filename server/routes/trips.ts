@@ -521,15 +521,23 @@ tripsRoutes.post('/', async (c) => {
     console.warn('[trips] parseTripPrompt fallback:', (err as Error)?.message?.slice(0, 140));
     const isRoad = detectRoadTripPrompt(body.prompt);
     const destMatch = body.prompt.match(
-      /\b(?:to|in|through|across|visiting|exploring)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'&-]{1,30})/i
+      /\b(?:travel\s+to|go\s+to|fly\s+to|drive\s+to|head\s+to|trip\s+to|to|in|through|across|visiting|visit|exploring)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s,'&-]{1,34})/i
     );
-    const cleanedDest = (destMatch?.[1] || body.prompt)
+    const rawDest = (destMatch?.[1] || body.prompt)
+      .replace(/^(?:travel|go|fly|drive|head|trip)\s+to\s+/i, '')
       .replace(
         /\b(for\s+|(?:in|on)\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|spring|summer|fall|winter|mon|tue|wed|thu|fri|sat|sun)|with\s+|this\s+weekend|next\s+month|\d+\s*-?\s*day).*$/i,
         ''
       )
       .replace(/\b(road\s*trip|trip|getaway|weekend|vacation)\s*$/i, '')
-      .trim() || 'Lisbon';
+      .replace(/^[,.\-–—:\s]+|[,.\-–—:\s!?]+$/g, '')
+      .trim();
+    const cleanedDest =
+      rawDest
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => (/^[A-Z]{2,4}$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
+        .join(' ') || 'Lisbon';
     parsed = {
       destination: cleanedDest,
       country: '',
