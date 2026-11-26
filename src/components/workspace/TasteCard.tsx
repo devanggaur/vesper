@@ -79,7 +79,11 @@ export const TasteCard: React.FC<TasteCardProps> = ({
   initialProfile,
   onSubmit,
 }) => {
-  const [travelers, setTravelers] = useState(initialProfile?.travelers || 'Maria & me');
+  const [travelers, setTravelers] = useState(() => {
+    const raw = initialProfile?.travelers;
+    if (!raw || raw === 'Maria & me') return 'Couple (2)';
+    return raw;
+  });
   const [selectedVibes, setSelectedVibes] = useState<string[]>(
     initialProfile?.vibes && initialProfile.vibes.length > 0
       ? initialProfile.vibes
@@ -132,7 +136,7 @@ export const TasteCard: React.FC<TasteCardProps> = ({
           <span>Who’s traveling</span>
         </label>
         <div className="flex flex-wrap gap-2">
-          {['Just me', 'Maria & me', 'Small group (3–4)', 'Family'].map((opt) => {
+          {['Just me', 'Couple (2)', 'Small group (3–4)', 'Family'].map((opt) => {
             const active = travelers === opt;
             return (
               <button
