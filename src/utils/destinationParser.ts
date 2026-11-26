@@ -44,13 +44,13 @@ function titleCasePlace(raw: string): string {
 }
 
 function cleanCandidate(raw: string): string {
-  let s = raw
-    // Strip trailing date / duration / focus clauses
+  const s = raw
+    // Strip trailing date / duration / focus clauses (including "for food and art", "food and architecture")
     .replace(
-      /\b(for\s+\d+|for\s+a\b|for\s+the\b|in\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|spring|summer|fall|autumn|winter)\b|on\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mon|tue|wed|thu|fri|sat|sun)\b|with\s+|focused\s+on\b|featuring\b|including\b|under\s+\$|around\s+\$|this\s+weekend|next\s+month|next\s+week|\d+\s*-?\s*day|\d+\s+nights?).*$/i,
+      /\b(for\s+|in\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|spring|summer|fall|autumn|winter)\b|on\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mon|tue|wed|thu|fri|sat|sun)\b|with\s+|focused\s+on\b|featuring\b|including\b|under\s+\$|around\s+\$|this\s+weekend|next\s+month|next\s+week|\d+\s*-?\s*day|\d+\s+nights?|\b(food|dining|art|architecture|wine|beaches?|hiking|culture|museums?|nightlife|shopping)\b).*$/i,
       ''
     )
-    .replace(/\b(road\s*trip|trip|getaway|weekend|vacation|holiday|itinerary|adventure|escape|break|tour|loop|drive|food|dining|art|architecture|beaches?|hiking|wine)\s*$/i, '')
+    .replace(/\b(road\s*trip|trip|getaway|weekend|vacation|holiday|itinerary|adventure|escape|break|tour|loop|drive|and|&)\s*$/i, '')
     .replace(/^[,.\-–—:\s]+|[,.\-–—:\s!?]+$/g, '')
     .trim();
 
