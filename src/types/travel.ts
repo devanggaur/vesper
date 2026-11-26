@@ -261,6 +261,8 @@ export interface LiveTripMetadata {
   center: Coordinates;
   heroImage: string;
   travelers: string;
+  isOwner?: boolean;
+  ownerName?: string | null;
   tasteProfile?: {
     travelers: string;
     vibes: string[];

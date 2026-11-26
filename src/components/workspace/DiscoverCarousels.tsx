@@ -181,6 +181,7 @@ interface PlaceCarouselProps {
   places: PlaceItem[];
   savedRefIds: Set<string>;
   likedIds: Set<string>;
+  readOnly?: boolean;
   onToggleSave: (place: PlaceItem) => void;
   onToggleLike: (id: string) => void;
   onSelectPlace: (place: PlaceItem) => void;
@@ -193,6 +194,7 @@ export const PlaceCarousel: React.FC<PlaceCarouselProps> = ({
   places,
   savedRefIds,
   likedIds,
+  readOnly = false,
   onToggleSave,
   onToggleLike,
   onSelectPlace,
@@ -270,21 +272,23 @@ export const PlaceCarousel: React.FC<PlaceCarouselProps> = ({
                 </span>
                 {/* Top-right Add (+) / Added (✓) & Heart overlay buttons */}
                 <div className="absolute top-3 right-3 flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleSave(place);
-                    }}
-                    title={isSaved ? 'Added to trip' : 'Add to trip'}
-                    className={`w-8 h-8 rounded-full backdrop-blur-xs flex items-center justify-center transition-all cursor-pointer ${
-                      isSaved
-                        ? 'bg-[#0E2034] text-white shadow-md'
-                        : 'bg-black/40 hover:bg-[#0E2034] text-white'
-                    }`}
-                  >
-                    {isSaved ? <Check className="w-4 h-4" strokeWidth={2.4} /> : <Plus className="w-4 h-4" />}
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSave(place);
+                      }}
+                      title={isSaved ? 'Added to trip' : 'Add to trip'}
+                      className={`w-8 h-8 rounded-full backdrop-blur-xs flex items-center justify-center transition-all cursor-pointer ${
+                        isSaved
+                          ? 'bg-[#0E2034] text-white shadow-md'
+                          : 'bg-black/40 hover:bg-[#0E2034] text-white'
+                      }`}
+                    >
+                      {isSaved ? <Check className="w-4 h-4" strokeWidth={2.4} /> : <Plus className="w-4 h-4" />}
+                    </button>
+                  )}
 
                   <button
                     type="button"

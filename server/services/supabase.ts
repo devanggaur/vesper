@@ -278,6 +278,23 @@ class VesperStore {
     return data as StoredProfile;
   }
 
+  async getProfileDisplayName(userId: string): Promise<string | null> {
+    if (!(await this.ensureChecked()) || !userId) return null;
+    const { data, error } = await this.client!
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error || !data) return null;
+    if (typeof data.full_name === 'string' && data.full_name.trim()) {
+      return data.full_name.trim().split(/\s+/)[0];
+    }
+    if (typeof data.email === 'string' && data.email.includes('@')) {
+      return data.email.split('@')[0];
+    }
+    return null;
+  }
+
   /* ── Trips CRUD ──────────────────────────────────────────────────────── */
 
   async createTrip(

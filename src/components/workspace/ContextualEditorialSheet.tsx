@@ -77,6 +77,7 @@ interface ContextualEditorialSheetProps {
   votes?: TripVote[];
   notes?: TripNote[];
   voterKey?: string;
+  readOnly?: boolean;
   isPlaceSaved: boolean;
   isLiked: boolean;
   onClose: () => void;
@@ -118,6 +119,7 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
   votes = [],
   notes = [],
   voterKey,
+  readOnly = false,
   isPlaceSaved,
   isLiked,
   onClose,
@@ -427,7 +429,7 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
                       </div>
                     </div>
 
-                    {savedItem && badge.needsBooking && onUpdateBookingStatus && (
+                    {!readOnly && savedItem && badge.needsBooking && onUpdateBookingStatus && (
                       <button
                         type="button"
                         onClick={() =>
@@ -735,32 +737,34 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
                     })}
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={isAdding || !activeSlot}
-                    onClick={() => {
-                      if (!activeSlot) return;
-                      setIsAdding(true);
-                      setTimeout(() => {
-                        setIsAdding(false);
-                        onAddActivity(act, actDate, activeSlot.time, activeSlot.endTime, actGuests, subtotal + 1);
-                        onClose();
-                      }, 550);
-                    }}
-                    className="w-full py-3 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13.5px] font-medium flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-                  >
-                    {isAdding ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Adding to timeline...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Add to timeline · est. ${subtotal}</span>
-                        <Plus className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      disabled={isAdding || !activeSlot}
+                      onClick={() => {
+                        if (!activeSlot) return;
+                        setIsAdding(true);
+                        setTimeout(() => {
+                          setIsAdding(false);
+                          onAddActivity(act, actDate, activeSlot.time, activeSlot.endTime, actGuests, subtotal + 1);
+                          onClose();
+                        }, 550);
+                      }}
+                      className="w-full py-3 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13.5px] font-medium flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                    >
+                      {isAdding ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Adding to timeline...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Add to timeline · est. ${subtotal}</span>
+                          <Plus className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  )}
 
                   {/* Live Partner Availability & Official Box Office Links */}
                   <div className="pt-2 border-t border-black/[0.06] space-y-2.5">
@@ -1095,31 +1099,33 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
                           </button>
                         </div>
 
-                        <button
-                          type="button"
-                          disabled={isAdding}
-                          onClick={() => {
-                            setIsAdding(true);
-                            setTimeout(() => {
-                              setIsAdding(false);
-                              onAddHotel(hotel, activeRoom, activeRate.price * roomQty);
-                              onClose();
-                            }, 550);
-                          }}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13.5px] font-medium shadow-sm cursor-pointer"
-                        >
-                          {isAdding ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Adding...</span>
-                            </>
-                          ) : (
-                            <>
-                              <span>Add room · ${(activeRate.price * roomQty).toLocaleString()}</span>
-                              <Plus className="w-4 h-4" />
-                            </>
-                          )}
-                        </button>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            disabled={isAdding}
+                            onClick={() => {
+                              setIsAdding(true);
+                              setTimeout(() => {
+                                setIsAdding(false);
+                                onAddHotel(hotel, activeRoom, activeRate.price * roomQty);
+                                onClose();
+                              }, 550);
+                            }}
+                            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13.5px] font-medium shadow-sm cursor-pointer"
+                          >
+                            {isAdding ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Adding...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Add room · ${(activeRate.price * roomQty).toLocaleString()}</span>
+                                <Plus className="w-4 h-4" />
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1288,8 +1294,8 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
         </div>
       </div>
 
-      {/* Sticky Sheet Footer for Place mode */}
-      {target.kind === 'place' && (
+      {/* Sticky Sheet Footer for Place mode (Organizer only) */}
+      {!readOnly && target.kind === 'place' && (
         <div className="shrink-0 bg-[#F7F6F1] border-t border-black/[0.08] px-5 pt-3 pb-safe grid grid-cols-2 gap-3">
           <button
             onClick={() => onAskVesper(`Tell me the best time to visit ${target.item.name} and any tips`)}

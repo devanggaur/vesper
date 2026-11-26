@@ -25,6 +25,7 @@ interface FlightSearchWidgetProps {
   dates: string;
   passengers: string;
   preferredAirlines?: string[];
+  readOnly?: boolean;
   onChangeOrigin?: (origin: string) => void;
   onAddFlights: (outbound: FlightOption, inbound: FlightOption, fare: FareClass) => void;
 }
@@ -149,6 +150,7 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
   dates,
   passengers,
   preferredAirlines,
+  readOnly = false,
   onChangeOrigin,
   onAddFlights,
 }) => {
@@ -1063,24 +1065,30 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
                       </div>
 
                       <div className="space-y-1.5 pt-1">
-                        <button
-                          type="button"
-                          disabled={addingFareId !== null}
-                          onClick={() => handleBookFare(fare)}
-                          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] disabled:opacity-60 text-[13px] font-medium transition-all cursor-pointer"
-                        >
-                          {isAddingThis ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Adding...</span>
-                            </>
-                          ) : (
-                            <>
-                              <span>Add to trip</span>
-                              <Plus className="w-3.5 h-3.5" />
-                            </>
-                          )}
-                        </button>
+                        {!readOnly ? (
+                          <button
+                            type="button"
+                            disabled={addingFareId !== null}
+                            onClick={() => handleBookFare(fare)}
+                            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] disabled:opacity-60 text-[13px] font-medium transition-all cursor-pointer"
+                          >
+                            {isAddingThis ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Adding...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Add to trip</span>
+                                <Plus className="w-3.5 h-3.5" />
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <div className="w-full text-center py-2 rounded-full bg-[#F3F2EC] text-[12px] font-medium text-[#5A626A]">
+                            Shared view · Organizer books
+                          </div>
+                        )}
                         <div className="text-center text-[10.5px] text-[#7B828A]">
                           Direct handoff · {selectedOutbound?.airline}
                         </div>

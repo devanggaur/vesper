@@ -31,6 +31,7 @@ interface CanvasBookingsProps {
   votes?: TripVote[];
   notes?: TripNote[];
   voterKey?: string;
+  readOnly?: boolean;
   onVote?: (entityId: string, kind: CollabEntityKind, vote: 'up' | 'down' | 'clear') => void;
   onOpenSharePoll?: () => void;
   onToggleLike: (id: string) => void;
@@ -60,6 +61,7 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   votes = [],
   notes = [],
   voterKey,
+  readOnly = false,
   onVote,
   onOpenSharePoll,
   onToggleLike,
@@ -201,13 +203,15 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
               ${totalCost.toLocaleString()}
             </div>
           </div>
-          <button
-            onClick={onOpenCheckout}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13px] font-medium shadow-xs transition-all cursor-pointer"
-          >
-            <span>Continue to book</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          {!readOnly && (
+            <button
+              onClick={onOpenCheckout}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13px] font-medium shadow-xs transition-all cursor-pointer"
+            >
+              <span>Continue to book</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -255,8 +259,8 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
         )}
       </div>
 
-      {/* Strategic Right-Moment Loyalty Banner (Stays -> Hotel Chains | Flights -> Airlines) */}
-      {onOpenLoyaltyWallet &&
+      {/* Strategic Right-Moment Loyalty Banner (Organizer only) */}
+      {!readOnly && onOpenLoyaltyWallet &&
         (relevantLoyalty.length > 0 ? (
           <div className="rounded-[18px] bg-[#FAF9F5] border border-black/[0.07] px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap text-[12px] text-[#2C333A]">
@@ -373,6 +377,7 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
             dates={datesLabel}
             passengers={travelers}
             preferredAirlines={preferredAirlines}
+            readOnly={readOnly}
             onChangeOrigin={onChangeHomeAirport}
             onAddFlights={onAddFlights}
           />

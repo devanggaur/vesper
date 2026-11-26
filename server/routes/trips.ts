@@ -29,6 +29,26 @@ import type {
 
 export const tripsRoutes = new Hono();
 
+/**
+ * Checks whether the current request belongs to the organizer of `trip`.
+ * - Signed-in owned trips (`trip.user_id` set): strictly requires matching authenticated user.
+ * - Unclaimed guest trips (`trip.user_id` null): allows organizer session on server while
+ *   frontend distinguishes creator vs. shared viewer via `vesper-owned-trips` localStorage.
+ */
+async function resolveTripOwnership(
+  trip: { user_id?: string | null },
+  authHeader?: string
+): Promise<{ isOwner: boolean; authedUser: Awaited<ReturnType<typeof store.verifyAccessToken>> }> {
+  const authedUser = await store.verifyAccessToken(authHeader);
+  if (!trip.user_id) {
+    return { isOwner: true, authedUser };
+  }
+  return {
+    isOwner: Boolean(authedUser && authedUser.id === trip.user_id),
+    authedUser,
+  };
+}
+
 /* ── Helpers converting real Google Places results into Vesper UI models ── */
 
 function toPlaceItem(
@@ -327,7 +347,9 @@ tripsRoutes.get('/slug/:slug', async (c) => {
   const trip = await store.getTripBySlug(slug);
   if (!trip) return c.json({ error: 'Shared trip not found' }, 404);
 
-  const [items, messages, votes, notes] = await Promise.all([
+  const [{ isOwner }, ownerName, items, messages, votes, notes] = await Promise.all([
+    resolveTripOwnership(trip, c.req.header('Authorization')),
+    trip.user_id ? store.getProfileDisplayName(trip.user_id) : Promise.resolve(null),
     store.getTripItems(trip.id),
     store.getMessages(trip.id),
     store.getTripVotes(trip.id),
@@ -347,11 +369,13 @@ tripsRoutes.get('/slug/:slug', async (c) => {
       center: { lat: trip.center_lat, lng: trip.center_lng },
       heroImage: trip.hero_image,
       travelers: trip.travelers,
+      isOwner,
+      ownerName,
       tasteProfile: trip.taste_profile,
       catalog: trip.catalog,
     },
     items,
-    messages,
+    messages: isOwner ? messages : [],
     votes,
     notes,
   });
@@ -371,7 +395,9 @@ tripsRoutes.get('/:id', async (c) => {
   const trip = await store.getTrip(id);
   if (!trip) return c.json({ error: 'Trip not found' }, 404);
 
-  const [items, messages, votes, notes] = await Promise.all([
+  const [{ isOwner }, ownerName, items, messages, votes, notes] = await Promise.all([
+    resolveTripOwnership(trip, c.req.header('Authorization')),
+    trip.user_id ? store.getProfileDisplayName(trip.user_id) : Promise.resolve(null),
     store.getTripItems(id),
     store.getMessages(id),
     store.getTripVotes(id),
@@ -391,11 +417,13 @@ tripsRoutes.get('/:id', async (c) => {
       center: { lat: trip.center_lat, lng: trip.center_lng },
       heroImage: trip.hero_image,
       travelers: trip.travelers,
+      isOwner,
+      ownerName,
       tasteProfile: trip.taste_profile,
       catalog: trip.catalog,
     },
     items,
-    messages,
+    messages: isOwner ? messages : [],
     votes,
     notes,
   });
@@ -552,10 +580,14 @@ tripsRoutes.post('/:id/compose', async (c) => {
   const trip = await store.getTrip(id);
   if (!trip) return c.json({ error: 'Trip not found' }, 404);
 
+  const { isOwner, authedUser } = await resolveTripOwnership(trip, c.req.header('Authorization'));
+  if (!isOwner) {
+    return c.json({ error: 'Only the trip organizer can modify this itinerary.' }, 403);
+  }
+
   const parsedBody = composeSchema.parse(await c.req.json());
   const { loyaltyPrograms: bodyLoyalty, ...taste } = parsedBody;
 
-  const authedUser = await store.verifyAccessToken(c.req.header('Authorization'));
   const storedProfile = authedUser ? await store.getOrCreateProfile(authedUser) : null;
   const effectiveLoyalty =
     bodyLoyalty && bodyLoyalty.length > 0
@@ -742,6 +774,12 @@ tripsRoutes.post('/:id/compose', async (c) => {
 /** PUT /api/trips/:id/items — Persists saved places, activities, hotels, and flights. */
 tripsRoutes.put('/:id/items', async (c) => {
   const id = c.req.param('id');
+  const trip = await store.getTrip(id);
+  if (!trip) return c.json({ error: 'Trip not found' }, 404);
+  const { isOwner } = await resolveTripOwnership(trip, c.req.header('Authorization'));
+  if (!isOwner) {
+    return c.json({ error: 'Only the trip organizer can edit trip stops.' }, 403);
+  }
   const body = (await c.req.json()) as { items: TripSavedItem[] };
   const saved = await store.replaceTripItems(id, body.items || []);
   return c.json({ items: saved });
@@ -755,6 +793,10 @@ tripsRoutes.post('/:id/organize', async (c) => {
   const id = c.req.param('id');
   const trip = await store.getTrip(id);
   if (!trip) return c.json({ error: 'Trip not found' }, 404);
+  const { isOwner } = await resolveTripOwnership(trip, c.req.header('Authorization'));
+  if (!isOwner) {
+    return c.json({ error: 'Only the trip organizer can reorganize this itinerary.' }, 403);
+  }
 
   const body = (await c.req.json()) as { items: TripSavedItem[] };
   const workingItems = body.items || [];
@@ -800,6 +842,10 @@ tripsRoutes.post('/:id/chat', async (c) => {
   const id = c.req.param('id');
   const trip = await store.getTrip(id);
   if (!trip) return c.json({ error: 'Trip not found' }, 404);
+  const { isOwner } = await resolveTripOwnership(trip, c.req.header('Authorization'));
+  if (!isOwner) {
+    return c.json({ error: 'Co-Pilot is only available to the trip organizer.' }, 403);
+  }
 
   const body = (await c.req.json()) as {
     message: string;
@@ -872,6 +918,10 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
   const id = c.req.param('id');
   const trip = await store.getTrip(id);
   if (!trip) return c.json({ error: 'Trip not found' }, 404);
+  const { isOwner } = await resolveTripOwnership(trip, c.req.header('Authorization'));
+  if (!isOwner) {
+    return c.json({ error: 'Co-Pilot is only available to the trip organizer.' }, 403);
+  }
 
   const body = (await c.req.json()) as {
     message: string;

@@ -10,6 +10,10 @@ import {
   SlidersHorizontal,
   Loader2,
   Share2,
+  Eye,
+  Columns2,
+  Maximize2,
+  ArrowRight,
 } from 'lucide-react';
 import {
   ActivityItem,
@@ -42,6 +46,7 @@ import { InteractiveMap } from './InteractiveMap';
 import { ContextualEditorialSheet, EditorialSheetTarget } from './ContextualEditorialSheet';
 import { BookingCheckoutModal } from './BookingCheckoutModal';
 import { CoPilotRail } from './CoPilotRail';
+import { GroupActivityRail } from './GroupActivityRail';
 import { CollabNamePromptModal, GroupShareModal } from './GroupShareModal';
 
 export type CanvasTab = 'discover' | 'timeline' | 'map' | 'bookings';
@@ -137,6 +142,19 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     initialFocusMode === 'flights' ? 'flights' : 'stays'
   );
   const [focusedMapDay, setFocusedMapDay] = useState<string>('All');
+
+  // Ownership & Shared Guest Viewer state (guests can view, vote & note — never edit or use Co-Pilot)
+  const [isTripOwner, setIsTripOwner] = useState<boolean>(!existingTripSlug);
+  const [ownerName, setOwnerName] = useState<string | null>(null);
+  const [previewingAsGuest, setPreviewingAsGuest] = useState<boolean>(() =>
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('preview') === 'guest'
+      : false
+  );
+  const [guestLayout, setGuestLayout] = useState<'full' | 'rail'>('rail');
+
+  const canEdit = isTripOwner && !previewingAsGuest;
+  const showRightRail = canEdit || guestLayout === 'rail';
 
   // Trip items & interaction state
   const [savedItems, setSavedItems] = useState<TripSavedItem[]>([]);
@@ -238,6 +256,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           setDestination(trip.destination);
           setDatesLabel(trip.datesLabel);
           setTravelersLabel(trip.travelers);
+          setOwnerName(trip.ownerName ?? null);
+          if (typeof trip.isOwner === 'boolean') {
+            setIsTripOwner(trip.isOwner);
+          } else {
+            setIsTripOwner(!existingTripSlug);
+          }
           if (trip.days?.length) setDays(trip.days);
           setMapCenter(trip.center);
           if (trip.heroImage) setHeroImage(trip.heroImage);
@@ -1044,10 +1068,38 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     },
   ];
 
+  const handleInspectCollabEntity = (entityId: string, kind: CollabEntityKind) => {
+    if (kind === 'hotel') {
+      const h = hotels.find((x) => x.id === entityId);
+      if (h) {
+        setSheetTarget({ kind: 'hotel', item: h });
+        return;
+      }
+      setActiveTab('bookings');
+      setBookingsSubTab('stays');
+      return;
+    }
+    if (kind === 'activity') {
+      const a = activities.find((x) => x.id === entityId);
+      if (a) {
+        setSheetTarget({ kind: 'activity', item: a });
+        return;
+      }
+    }
+    const p = places.find((x) => x.id === entityId);
+    if (p) {
+      setSheetTarget({ kind: 'place', item: p });
+    }
+  };
+
   return (
     <div className="relative h-dvh w-full flex overflow-hidden bg-[#F7F6F1]">
-      {/* ── LEFT 66% (Desktop) / 100% (Mobile): LIVING TRIP CANVAS ──────── */}
-      <div className="flex-1 lg:w-[66%] lg:flex-none h-full flex flex-col min-w-0 relative">
+      {/* ── LEFT 66% (or 100% in Guest Full-Width Mode): LIVING TRIP CANVAS ─ */}
+      <div
+        className={`flex-1 ${
+          showRightRail ? 'lg:w-[66%] lg:flex-none' : 'lg:w-full'
+        } h-full flex flex-col min-w-0 relative`}
+      >
         {/* Top Workspace Navigation Bar */}
         <header className="shrink-0 h-[56px] px-3.5 sm:px-6 flex items-center justify-between gap-2 border-b border-black/[0.06] bg-[#F7F6F1]">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -1132,7 +1184,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               </button>
             )}
             <ThemeSwitcher theme={theme} onChange={onChangeTheme} compact />
-            {totalCost > 0 && (
+            {canEdit && totalCost > 0 && (
               <button
                 onClick={() => setShowBookingModal(true)}
                 className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#0E2034] font-tabular text-[12px] font-semibold cursor-pointer shadow-2xs"
@@ -1142,6 +1194,87 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             )}
           </div>
         </header>
+
+        {/* Shared Guest Viewer Banner + 2-Way Layout Toggle (Full Width vs. Group Rail) */}
+        {!canEdit && (
+          <div className="shrink-0 px-3.5 sm:px-6 py-2 bg-[#ECEAE2]/90 border-b border-black/[0.07] flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-[12px] text-[#2C333A] min-w-0">
+              <Eye className="w-3.5 h-3.5 text-[#C85A17] shrink-0" />
+              <span className="truncate">
+                {previewingAsGuest ? (
+                  <>
+                    <strong className="text-[#14191F]">Guest preview</strong> · Read-only view with
+                    voting &amp; notes
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-[#14191F]">
+                      {ownerName ? `${ownerName}’s trip` : 'Shared trip'}
+                    </strong>{' '}
+                    · View itinerary, vote &amp; leave notes
+                  </>
+                )}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Desktop 2-Way Layout Switcher so you can compare Full Width vs. Group Rail */}
+              <div
+                className="hidden lg:inline-flex items-center rounded-full p-0.5 bg-white border border-black/[0.09]"
+                role="group"
+                aria-label="Guest layout switcher"
+              >
+                <button
+                  type="button"
+                  onClick={() => setGuestLayout('full')}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
+                    guestLayout === 'full'
+                      ? 'bg-[#0E2034] text-white'
+                      : 'text-[#5A626A] hover:text-[#14191F]'
+                  }`}
+                  style={guestLayout === 'full' ? { color: '#FFFFFF' } : undefined}
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Full width</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGuestLayout('rail')}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
+                    guestLayout === 'rail'
+                      ? 'bg-[#0E2034] text-white'
+                      : 'text-[#5A626A] hover:text-[#14191F]'
+                  }`}
+                  style={guestLayout === 'rail' ? { color: '#FFFFFF' } : undefined}
+                >
+                  <Columns2 className="w-3 h-3" />
+                  <span>Group rail</span>
+                </button>
+              </div>
+
+              {previewingAsGuest ? (
+                <button
+                  type="button"
+                  onClick={() => setPreviewingAsGuest(false)}
+                  className="px-3 py-1 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[11.5px] font-medium cursor-pointer"
+                  style={{ color: '#FFFFFF' }}
+                >
+                  Exit preview
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onGoHome}
+                  className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[11.5px] font-medium cursor-pointer"
+                  style={{ color: '#FFFFFF' }}
+                >
+                  <span>Plan my own trip</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Active Canvas Stage + Scoped Contextual Sheet Overlay */}
         <div className="relative flex-1 min-h-0 overflow-hidden">
@@ -1224,24 +1357,26 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                           ).join(', ')}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={() => setTasteCalibrated(false)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F3F2EC] hover:bg-[#ECEAE2] text-[12px] font-medium text-[#2C333A] cursor-pointer"
-                        >
-                          <SlidersHorizontal className="w-3.5 h-3.5" />
-                          <span>Retune</span>
-                        </button>
-                        <button
-                          onClick={() =>
-                            runOrganizeItinerary(`Auto-route my ${destination} trip into days`)
-                          }
-                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[12px] font-medium cursor-pointer"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>Auto-route trip</span>
-                        </button>
-                      </div>
+                      {canEdit && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => setTasteCalibrated(false)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F3F2EC] hover:bg-[#ECEAE2] text-[12px] font-medium text-[#2C333A] cursor-pointer"
+                          >
+                            <SlidersHorizontal className="w-3.5 h-3.5" />
+                            <span>Retune</span>
+                          </button>
+                          <button
+                            onClick={() =>
+                              runOrganizeItinerary(`Auto-route my ${destination} trip into days`)
+                            }
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[12px] font-medium cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Auto-route trip</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {activities.length > 0 && (
@@ -1265,6 +1400,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                           places={sec.places}
                           savedRefIds={savedRefIds}
                           likedIds={likedIds}
+                          readOnly={!canEdit}
                           onToggleSave={handleToggleSavePlace}
                           onToggleLike={handleToggleLike}
                           onSelectPlace={(p) => setSheetTarget({ kind: 'place', item: p })}
@@ -1287,6 +1423,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   votes={votes}
                   notes={notes}
                   voterKey={effectiveCollaborator?.key}
+                  readOnly={!canEdit}
                   isOrganizing={isOrganizing}
                   onVote={showGroupCollab ? handleCollabVote : undefined}
                   onOpenShareModal={() => setShowShareModal(true)}
@@ -1342,6 +1479,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   votes={votes}
                   notes={notes}
                   voterKey={effectiveCollaborator?.key}
+                  readOnly={!canEdit}
                   onVote={showGroupCollab ? handleCollabVote : undefined}
                   onOpenSharePoll={showGroupCollab ? () => setShowShareModal(true) : undefined}
                   onToggleLike={handleToggleLike}
@@ -1369,6 +1507,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 votes={votes}
                 notes={notes}
                 voterKey={effectiveCollaborator?.key}
+                readOnly={!canEdit}
                 isPlaceSaved={
                   sheetTarget.kind === 'place' ? savedRefIds.has(sheetTarget.item.id) : false
                 }
@@ -1428,8 +1567,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           })}
         </nav>
 
-        {/* Mobile Floating Vesper Co-Pilot FAB (< 1024px) */}
-        {!mobileCopilotOpen && (
+        {/* Mobile Floating Vesper Co-Pilot FAB (< 1024px, Organizer only) */}
+        {canEdit && !mobileCopilotOpen && (
           <button
             type="button"
             onClick={() => {
@@ -1451,21 +1590,37 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         )}
       </div>
 
-      {/* ── RIGHT 34% (Desktop): PERSISTENT VESPER AI CO-PILOT RAIL ─────── */}
-      <aside className="hidden lg:block lg:w-[34%] h-full border-l border-black/[0.08] shrink-0">
-        <CoPilotRail
-          messages={messages}
-          streamingText={streamingText}
-          thinkingLabel={thinkingLabel}
-          statusStep={statusStep}
-          sheetTarget={sheetTarget}
-          onSend={handleCoPilotSend}
-        />
-      </aside>
+      {/* ── RIGHT 34% (Desktop): CO-PILOT (Organizer) OR GROUP RAIL (Guest) ─ */}
+      {showRightRail && (
+        <aside className="hidden lg:block lg:w-[34%] h-full border-l border-black/[0.08] shrink-0">
+          {canEdit ? (
+            <CoPilotRail
+              messages={messages}
+              streamingText={streamingText}
+              thinkingLabel={thinkingLabel}
+              statusStep={statusStep}
+              sheetTarget={sheetTarget}
+              onSend={handleCoPilotSend}
+            />
+          ) : (
+            <GroupActivityRail
+              destination={destination}
+              ownerName={ownerName}
+              votes={votes}
+              notes={notes}
+              hotels={hotels}
+              places={places}
+              activities={activities}
+              onInspectEntity={handleInspectCollabEntity}
+              onPlanOwnTrip={onGoHome}
+            />
+          )}
+        </aside>
+      )}
 
-      {/* ── MOBILE CO-PILOT BOTTOM SHEET (< 1024px) ─────────────────────── */}
+      {/* ── MOBILE CO-PILOT BOTTOM SHEET (< 1024px, Organizer only) ─────── */}
       <AnimatePresence>
-        {mobileCopilotOpen && (
+        {canEdit && mobileCopilotOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -1525,6 +1680,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             votes={votes}
             notes={notes}
             collaborator={effectiveCollaborator}
+            isOwner={isTripOwner}
+            onPreviewGuestView={() => {
+              setSheetTarget(null);
+              setPreviewingAsGuest(true);
+            }}
             onSaveCollaboratorName={(name) => saveCollaboratorName(name)}
             onAskCoPilotConsensus={() => {
               setMobileCopilotOpen(true);

@@ -10,6 +10,7 @@ import {
   Sparkles,
   ThumbsUp,
   User,
+  Eye,
 } from 'lucide-react';
 import { CollaboratorIdentity, TripNote, TripVote } from '../../types/travel';
 import { BrandMark } from '../common/BrandMark';
@@ -22,6 +23,8 @@ interface GroupShareModalProps {
   votes: TripVote[];
   notes: TripNote[];
   collaborator: CollaboratorIdentity | null;
+  isOwner?: boolean;
+  onPreviewGuestView?: () => void;
   onSaveCollaboratorName: (name: string) => void;
   onAskCoPilotConsensus: () => void;
   onNotify: (msg: string) => void;
@@ -48,6 +51,8 @@ export const GroupShareModal: React.FC<GroupShareModalProps> = ({
   votes,
   notes,
   collaborator,
+  isOwner = false,
+  onPreviewGuestView,
   onSaveCollaboratorName,
   onAskCoPilotConsensus,
   onNotify,
@@ -242,7 +247,7 @@ export const GroupShareModal: React.FC<GroupShareModalProps> = ({
               </p>
             )}
 
-            {(votes.length > 0 || notes.length > 0) && (
+            {isOwner && (votes.length > 0 || notes.length > 0) && (
               <button
                 type="button"
                 onClick={() => {
@@ -253,6 +258,20 @@ export const GroupShareModal: React.FC<GroupShareModalProps> = ({
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#C85A17]" />
                 <span>Ask Co-Pilot to build around group votes</span>
+              </button>
+            )}
+
+            {isOwner && onPreviewGuestView && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onPreviewGuestView();
+                }}
+                className="w-full py-2 px-3 rounded-xl bg-white hover:bg-[#FAF9F5] border border-black/[0.09] text-[12px] font-medium text-[#2C333A] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5 text-[#5A626A]" />
+                <span>Preview guest view (Full width vs. Group rail)</span>
               </button>
             )}
           </div>

@@ -52,6 +52,7 @@ interface CanvasTimelineProps {
   votes?: TripVote[];
   notes?: TripNote[];
   voterKey?: string;
+  readOnly?: boolean;
   isOrganizing: boolean;
   onVote?: (entityId: string, kind: CollabEntityKind, vote: 'up' | 'down' | 'clear') => void;
   onOpenShareModal?: () => void;
@@ -87,6 +88,7 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
   votes = [],
   notes = [],
   voterKey,
+  readOnly = false,
   isOrganizing,
   onVote,
   onOpenShareModal,
@@ -228,19 +230,22 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                 ${totalCost.toLocaleString()}
               </div>
             </div>
-            <button
-              onClick={onOpenBookingCheckout}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-[#14191F] hover:opacity-95 text-[12.5px] font-semibold shadow cursor-pointer"
-              style={{ backgroundColor: 'var(--v-cta)', color: 'var(--v-cta-text)' }}
-            >
-              <span>Book</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            {!readOnly && (
+              <button
+                onClick={onOpenBookingCheckout}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-[#14191F] hover:opacity-95 text-[12.5px] font-semibold shadow cursor-pointer"
+                style={{ backgroundColor: 'var(--v-cta)', color: 'var(--v-cta-text)' }}
+              >
+                <span>Book</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Flights & Stay Anchors Strip */}
+      {(!readOnly || Boolean(flightItem?.flightDetails) || Boolean(hotelItem?.hotelDetails)) && (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {flightItem && flightItem.flightDetails ? (
           <div className="rounded-[18px] bg-white border border-black/[0.08] p-3.5 shadow-2xs flex items-center justify-between gap-3">
@@ -265,7 +270,7 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
               <div className="text-[10.5px] text-[#7B828A]">2 pax RT</div>
             </div>
           </div>
-        ) : (
+        ) : !readOnly ? (
           <button
             onClick={onSearchFlights}
             className="rounded-[18px] border border-dashed border-black/[0.2] hover:border-[#0E2034] bg-white/60 hover:bg-white p-3.5 flex items-center justify-between text-left transition-all cursor-pointer group"
@@ -281,7 +286,7 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
             </div>
             <ArrowRight className="w-4 h-4 text-[#7B828A] group-hover:translate-x-0.5 transition-transform" />
           </button>
-        )}
+        ) : null}
 
         {hotelItem && hotelItem.hotelDetails ? (
           <div className="rounded-[18px] bg-white border border-black/[0.08] p-3.5 shadow-2xs flex items-center justify-between gap-3">
@@ -307,7 +312,7 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
               ${hotelItem.price}
             </div>
           </div>
-        ) : (
+        ) : !readOnly ? (
           <button
             onClick={onSearchHotels}
             className="rounded-[18px] border border-dashed border-black/[0.2] hover:border-[#0E2034] bg-white/60 hover:bg-white p-3.5 flex items-center justify-between text-left transition-all cursor-pointer group"
@@ -323,11 +328,12 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
             </div>
             <ArrowRight className="w-4 h-4 text-[#7B828A] group-hover:translate-x-0.5 transition-transform" />
           </button>
-        )}
+        ) : null}
       </div>
+      )}
 
-      {/* Pending Tickets & Reservations Action Strip */}
-      {pendingTicketStops.length > 0 && (
+      {/* Pending Tickets & Reservations Action Strip (Organizer only) */}
+      {!readOnly && pendingTicketStops.length > 0 && (
         <div className="rounded-[18px] bg-amber-50/80 border border-amber-200/80 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
@@ -367,15 +373,17 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                 Let Vesper group them by neighborhood and assign realistic times.
               </p>
             </div>
-            <button
-              onClick={onOrganizeItinerary}
-              disabled={isOrganizing}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-[#0E2034] hover:bg-[#17304D] disabled:opacity-60 text-[12.5px] font-medium shadow-xs transition-all cursor-pointer shrink-0"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{isOrganizing ? 'Routing stops...' : 'Organize into days'}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            {!readOnly && (
+              <button
+                onClick={onOrganizeItinerary}
+                disabled={isOrganizing}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-[#0E2034] hover:bg-[#17304D] disabled:opacity-60 text-[12.5px] font-medium shadow-xs transition-all cursor-pointer shrink-0"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{isOrganizing ? 'Routing stops...' : 'Organize into days'}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -407,13 +415,15 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                       </div>
                     </div>
                   </button>
-                  <button
-                    onClick={() => onRemoveItem(item.id)}
-                    className="p-1.5 rounded-lg hover:bg-black/[0.05] text-[#7B828A] cursor-pointer"
-                    title="Remove"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={() => onRemoveItem(item.id)}
+                      className="p-1.5 rounded-lg hover:bg-black/[0.05] text-[#7B828A] cursor-pointer"
+                      title="Remove"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -634,15 +644,17 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                                   ${item.price}
                                 </span>
                               ) : null}
-                              <button
-                                onClick={() =>
-                                  setEditingItemId(editingItemId === item.id ? null : item.id)
-                                }
-                                className="p-1.5 rounded-lg hover:bg-black/[0.05] text-[#7B828A] cursor-pointer"
-                                title="Edit time, ticket status, or remove"
-                              >
-                                <ChevronDown className="w-4 h-4" />
-                              </button>
+                              {!readOnly && (
+                                <button
+                                  onClick={() =>
+                                    setEditingItemId(editingItemId === item.id ? null : item.id)
+                                  }
+                                  className="p-1.5 rounded-lg hover:bg-black/[0.05] text-[#7B828A] cursor-pointer"
+                                  title="Edit time, ticket status, or remove"
+                                >
+                                  <ChevronDown className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </div>
 
