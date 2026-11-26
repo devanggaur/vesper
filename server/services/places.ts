@@ -79,7 +79,7 @@ function normalizePlace(raw: RawGooglePlace, fallbackArea: string): GooglePlaceL
   const photos = (raw.photos || [])
     .map((p) => p.name)
     .filter((n): n is string => Boolean(n))
-    .slice(0, 4);
+    .slice(0, 8);
 
   return {
     id: raw.id,

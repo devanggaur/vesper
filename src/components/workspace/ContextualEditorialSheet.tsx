@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
   Heart,
@@ -50,6 +50,7 @@ import {
   inferPlaceBookingType,
 } from '../../utils/bookingHelpers';
 import { SmartImage } from '../common/SmartImage';
+import { PhotoLightboxModal } from '../common/PhotoLightboxModal';
 
 /**
  * Discriminated union describing which entity dossier the editorial sheet is displaying.
@@ -113,8 +114,14 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Place state
+  // Place & Full-Screen Photo Lightbox state
   const [photoIdx, setPhotoIdx] = useState(0);
+  const [lightboxState, setLightboxState] = useState<{
+    title: string;
+    subtitle?: string;
+    images: string[];
+    initialIndex: number;
+  } | null>(null);
 
   // Activity state
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(
@@ -230,19 +237,102 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
 
             return (
               <>
-                <div className="relative h-[240px] sm:h-[290px] rounded-[20px] overflow-hidden">
-                  <SmartImage
-                    src={place.gallery[photoIdx % place.gallery.length] || place.image}
-                    alt={place.name}
-                    className="w-full h-full object-cover"
-                  />
-                  {place.gallery.length > 1 && (
+                <div className="space-y-2">
+                  <div
+                    onClick={() =>
+                      setLightboxState({
+                        title: place.name,
+                        subtitle: `${place.neighborhood} · ${place.category}`,
+                        images: place.gallery.length > 0 ? place.gallery : [place.image],
+                        initialIndex: photoIdx,
+                      })
+                    }
+                    className="relative h-[240px] sm:h-[290px] rounded-[20px] overflow-hidden cursor-zoom-in group"
+                  >
+                    <SmartImage
+                      src={place.gallery[photoIdx % place.gallery.length] || place.image}
+                      alt={place.name}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                    />
+                    {place.gallery.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPhotoIdx(
+                              (i) => (i - 1 + place.gallery.length) % place.gallery.length
+                            );
+                          }}
+                          aria-label="Previous photo"
+                          className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/75 text-white flex items-center justify-center backdrop-blur-xs transition-colors cursor-pointer"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPhotoIdx((i) => (i + 1) % place.gallery.length);
+                          }}
+                          aria-label="Next photo"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/75 text-white flex items-center justify-center backdrop-blur-xs transition-colors cursor-pointer"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
                     <button
-                      onClick={() => setPhotoIdx((i) => (i + 1) % place.gallery.length)}
-                      className="absolute bottom-3 right-3 px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white text-[12px] font-medium backdrop-blur-xs cursor-pointer"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLightboxState({
+                          title: place.name,
+                          subtitle: `${place.neighborhood} · ${place.category}`,
+                          images: place.gallery.length > 0 ? place.gallery : [place.image],
+                          initialIndex: photoIdx,
+                        });
+                      }}
+                      className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/65 hover:bg-black/85 text-white text-[12px] font-medium backdrop-blur-xs cursor-pointer"
                     >
-                      Photo {(photoIdx % place.gallery.length) + 1} / {place.gallery.length} →
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>
+                        {place.gallery.length > 1
+                          ? `Full view (${(photoIdx % place.gallery.length) + 1}/${place.gallery.length})`
+                          : 'Full view'}
+                      </span>
                     </button>
+                  </div>
+
+                  {place.gallery.length > 1 && (
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+                      {place.gallery.map((imgUrl, idx) => (
+                        <button
+                          key={`${idx}-${imgUrl}`}
+                          type="button"
+                          onClick={() => {
+                            setPhotoIdx(idx);
+                            setLightboxState({
+                              title: place.name,
+                              subtitle: `${place.neighborhood} · ${place.category}`,
+                              images: place.gallery,
+                              initialIndex: idx,
+                            });
+                          }}
+                          className={`relative w-16 h-11 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                            idx === photoIdx % place.gallery.length
+                              ? 'border-[#0E2034] opacity-100'
+                              : 'border-transparent opacity-75 hover:opacity-100'
+                          }`}
+                        >
+                          <SmartImage
+                            src={imgUrl}
+                            alt={`${place.name} photo ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
 
@@ -466,21 +556,63 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
 
             return (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 h-[220px] sm:h-[260px] rounded-[20px] overflow-hidden">
-                  <div className="sm:col-span-7 h-full overflow-hidden">
-                    <SmartImage src={act.gallery[0] || act.image} alt={act.title} className="w-full h-full object-cover" />
-                  </div>
+                <div className="relative grid grid-cols-1 sm:grid-cols-12 gap-2 h-[220px] sm:h-[260px] rounded-[20px] overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLightboxState({
+                        title: act.title,
+                        subtitle: `${act.category} · ${act.duration}`,
+                        images: act.gallery.length > 0 ? act.gallery : [act.image],
+                        initialIndex: 0,
+                      })
+                    }
+                    className="sm:col-span-7 h-full overflow-hidden cursor-zoom-in group"
+                  >
+                    <SmartImage
+                      src={act.gallery[0] || act.image}
+                      alt={act.title}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                    />
+                  </button>
                   <div className="hidden sm:grid sm:col-span-5 grid-rows-2 gap-2 h-full">
                     {[1, 2].map((idx) => (
-                      <div key={idx} className="overflow-hidden">
+                      <button
+                        type="button"
+                        key={idx}
+                        onClick={() =>
+                          setLightboxState({
+                            title: act.title,
+                            subtitle: `${act.category} · ${act.duration}`,
+                            images: act.gallery.length > 0 ? act.gallery : [act.image],
+                            initialIndex: idx % Math.max(1, act.gallery.length),
+                          })
+                        }
+                        className="overflow-hidden cursor-zoom-in group"
+                      >
                         <SmartImage
                           src={act.gallery[idx % act.gallery.length] || act.image}
                           alt={`${act.title} ${idx}`}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
                         />
-                      </div>
+                      </button>
                     ))}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLightboxState({
+                        title: act.title,
+                        subtitle: `${act.category} · ${act.duration}`,
+                        images: act.gallery.length > 0 ? act.gallery : [act.image],
+                        initialIndex: 0,
+                      })
+                    }
+                    className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/65 hover:bg-black/85 text-white text-[12px] font-medium backdrop-blur-xs cursor-pointer"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span>View all {Math.max(1, act.gallery.length)} photos</span>
+                  </button>
                 </div>
 
                 <div>
@@ -683,21 +815,63 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
             return (
               <>
                 <div id="sheet-hotel-highlights" className="scroll-mt-4 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 h-[220px] sm:h-[270px] rounded-[20px] overflow-hidden">
-                    <div className="sm:col-span-7 h-full overflow-hidden">
-                      <SmartImage src={hotel.gallery[0] || hotel.image} alt={hotel.name} className="w-full h-full object-cover" />
-                    </div>
+                  <div className="relative grid grid-cols-1 sm:grid-cols-12 gap-2 h-[220px] sm:h-[270px] rounded-[20px] overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLightboxState({
+                          title: hotel.name,
+                          subtitle: `${hotel.neighborhood}, ${destination}`,
+                          images: hotel.gallery.length > 0 ? hotel.gallery : [hotel.image],
+                          initialIndex: 0,
+                        })
+                      }
+                      className="sm:col-span-7 h-full overflow-hidden cursor-zoom-in group"
+                    >
+                      <SmartImage
+                        src={hotel.gallery[0] || hotel.image}
+                        alt={hotel.name}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                      />
+                    </button>
                     <div className="hidden sm:grid sm:col-span-5 grid-rows-2 gap-2 h-full">
                       {[1, 2].map((idx) => (
-                        <div key={idx} className="overflow-hidden">
+                        <button
+                          type="button"
+                          key={idx}
+                          onClick={() =>
+                            setLightboxState({
+                              title: hotel.name,
+                              subtitle: `${hotel.neighborhood}, ${destination}`,
+                              images: hotel.gallery.length > 0 ? hotel.gallery : [hotel.image],
+                              initialIndex: idx % Math.max(1, hotel.gallery.length),
+                            })
+                          }
+                          className="overflow-hidden cursor-zoom-in group"
+                        >
                           <SmartImage
                             src={hotel.gallery[idx % hotel.gallery.length] || hotel.image}
                             alt={`${hotel.name} ${idx}`}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
                           />
-                        </div>
+                        </button>
                       ))}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLightboxState({
+                          title: hotel.name,
+                          subtitle: `${hotel.neighborhood}, ${destination}`,
+                          images: hotel.gallery.length > 0 ? hotel.gallery : [hotel.image],
+                          initialIndex: 0,
+                        })
+                      }
+                      className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/65 hover:bg-black/85 text-white text-[12px] font-medium backdrop-blur-xs cursor-pointer"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>View all {Math.max(1, hotel.gallery.length)} photos</span>
+                    </button>
                   </div>
 
                   <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
@@ -966,6 +1140,18 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
           </button>
         </div>
       )}
+      {/* Full-Screen Uncropped Photo Lightbox */}
+      <AnimatePresence>
+        {lightboxState && (
+          <PhotoLightboxModal
+            title={lightboxState.title}
+            subtitle={lightboxState.subtitle}
+            images={lightboxState.images}
+            initialIndex={lightboxState.initialIndex}
+            onClose={() => setLightboxState(null)}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
