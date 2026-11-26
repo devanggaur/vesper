@@ -501,7 +501,7 @@ export const TasteCard: React.FC<TasteCardProps> = ({
           }
           className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[14px] font-medium shadow-md transition-all cursor-pointer active:scale-[0.98]"
         >
-          <span>{tripMode === 'roadtrip' ? 'Compose my road trip' : 'Compose my itinerary'}</span>
+          <span>{tripMode === 'roadtrip' ? 'Build my road trip' : 'Build my trip'}</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

@@ -243,7 +243,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13px] font-medium shadow-xs transition-all cursor-pointer shrink-0"
                   style={{ color: '#FFFFFF' }}
                 >
-                  <span>Compose</span>
+                  <span>Plan trip</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>

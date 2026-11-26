@@ -721,7 +721,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         blocks: [
           {
             type: 'text',
-            content: `Composed your **${destination}** canvas for **${profile.travelers}** around **${profile.vibes
+            content: `Built your **${destination}** picks for **${profile.travelers}** around **${profile.vibes
               .slice(0, 3)
               .join(', ')}** at a **${profile.pace.toLowerCase()}** pace.`,
           },

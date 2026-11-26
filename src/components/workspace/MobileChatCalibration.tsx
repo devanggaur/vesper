@@ -554,7 +554,7 @@ export const MobileChatCalibration: React.FC<MobileChatCalibrationProps> = ({
                   style={{ color: '#FFFFFF' }}
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>{isRoadTrip ? 'Compose my road trip' : 'Compose my itinerary'}</span>
+                  <span>{isRoadTrip ? 'Build my road trip' : 'Build my trip'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
