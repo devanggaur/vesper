@@ -182,17 +182,17 @@ export const LandingView: React.FC<LandingViewProps> = ({
           Weekend city breaks, family road trips, beaches, or solo adventures—routed and bookable in minutes.
         </motion.p>
 
-        {/* Elevated Centered Universal Prompt Composer (Clean, Odessia-inspired single-box flow) */}
+        {/* Elevated Centered Universal Prompt Composer (Clean, Odessia-inspired 2-row box) */}
         <motion.form
           onSubmit={handleSubmit}
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, delay: 0.1 }}
-          className="w-full max-w-[640px] rounded-[24px] bg-white border border-black/[0.09] shadow-[0_14px_42px_rgba(14,32,52,0.09)] px-4 sm:px-5 py-3.5"
+          className="w-full max-w-[650px] rounded-[24px] bg-white border border-black/[0.09] shadow-[0_14px_42px_rgba(14,32,52,0.09)] px-4 sm:px-5 pt-4 pb-3 space-y-2.5"
         >
           {voice.isRecording ? (
             <div className="space-y-2.5">
-              <div className="text-[15px] text-[#14191F] min-h-[24px]">
+              <div className="text-[15.5px] text-[#14191F] min-h-[48px] leading-relaxed">
                 {voice.transcript || 'Listening...'}
               </div>
               <div className="flex items-center justify-between w-full gap-3 pt-1">
@@ -229,32 +229,40 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2.5">
-              <input
-                type="text"
+            <>
+              <textarea
+                rows={2}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit();
+                  }
+                }}
                 placeholder={ROTATING_PLACEHOLDERS[placeholderIdx]}
-                className="flex-1 min-w-0 bg-transparent text-[15px] sm:text-[16px] text-[#14191F] placeholder:text-[#7B828A] focus:outline-none py-1"
+                className="w-full resize-none bg-transparent text-[15.5px] sm:text-[16px] leading-[1.5] text-[#14191F] placeholder:text-[#7B828A] focus:outline-none min-h-[48px]"
               />
-              <button
-                type="button"
-                onClick={voice.startRecording}
-                className="w-9 h-9 rounded-full hover:bg-black/[0.05] text-[#4A535C] flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                title="Speak to Vesper"
-                aria-label="Speak to Vesper"
-              >
-                <Mic className="w-[17px] h-[17px]" />
-              </button>
-              <button
-                type="submit"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13px] font-medium shadow-xs transition-all cursor-pointer shrink-0"
-                style={{ color: '#FFFFFF' }}
-              >
-                <span>Compose</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={voice.startRecording}
+                  className="w-9 h-9 rounded-full hover:bg-black/[0.05] text-[#4A535C] flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                  title="Speak to Vesper"
+                  aria-label="Speak to Vesper"
+                >
+                  <Mic className="w-[17px] h-[17px]" />
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13px] font-medium shadow-xs transition-all cursor-pointer shrink-0"
+                  style={{ color: '#FFFFFF' }}
+                >
+                  <span>Compose</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </>
           )}
         </motion.form>
 
