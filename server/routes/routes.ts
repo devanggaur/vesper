@@ -12,16 +12,17 @@ const legSchema = z.object({
 
 const batchSchema = z.object({
   legs: z.array(legSchema).max(20),
+  includeGeometry: z.boolean().optional(),
 });
 
 /**
  * POST /api/routes/estimate
- * Batches consecutive timeline stop pairs into real OSRM street/footpath durations,
- * cached 30 days in Supabase `place_cache` ($0/mo routing cost).
+ * Batches consecutive timeline stop pairs into real OSRM street/highway durations
+ * (and optional GeoJSON highway polylines for Road Trip Mode), cached 30 days in Supabase.
  */
 routingRoutes.post('/estimate', async (c) => {
-  const { legs } = batchSchema.parse(await c.req.json());
+  const { legs, includeGeometry } = batchSchema.parse(await c.req.json());
   if (legs.length === 0) return c.json({ legs: [] });
-  const estimates = await estimateRouteLegsBatch(legs);
+  const estimates = await estimateRouteLegsBatch(legs, { includeGeometry: Boolean(includeGeometry) });
   return c.json({ legs: estimates });
 });

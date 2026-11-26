@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BedDouble, Plane, ArrowRight, CheckCircle2, Award, X, Users } from 'lucide-react';
+import { BedDouble, Plane, ArrowRight, CheckCircle2, Award, X, Users, Car, MapPin } from 'lucide-react';
 import {
   CollabEntityKind,
   FareClass,
   FlightOption,
   HotelItem,
   LoyaltyProgramEntry,
+  RoadTripConfig,
+  TripDayMeta,
+  TripMode,
   TripNote,
   TripSavedItem,
   TripVote,
@@ -25,6 +28,11 @@ interface CanvasBookingsProps {
   destination?: string;
   datesLabel?: string;
   travelers?: string;
+  days?: TripDayMeta[];
+  tripMode?: TripMode;
+  roadTrip?: RoadTripConfig | null;
+  activeTown?: string | null;
+  onChangeActiveTown?: (town: string | null) => void;
   hotels?: HotelItem[];
   items: TripSavedItem[];
   likedIds: Set<string>;
@@ -55,6 +63,11 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   destination = 'Mexico City',
   datesLabel = 'Jun 19 – 21',
   travelers = '2 adults',
+  days = [],
+  tripMode = 'city',
+  roadTrip = null,
+  activeTown = null,
+  onChangeActiveTown,
   hotels: liveHotels,
   items,
   likedIds,
@@ -74,6 +87,24 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   const [liveHotelRes, setLiveHotelRes] = useState<LiveHotelSearchResponse | null>(null);
   const [isLoadingHotels, setIsLoadingHotels] = useState(false);
 
+  const isRoadTrip = tripMode === 'roadtrip';
+  const isDriveFromHome = isRoadTrip && roadTrip?.transportMode !== 'fly_drive';
+  const overnightTowns = useMemo(() => {
+    if (!isRoadTrip) return [];
+    const seen = new Set<string>();
+    const list: string[] = [];
+    for (const d of days) {
+      const t = (d.overnightTown || d.legTo || '').trim();
+      if (t && !seen.has(t.toLowerCase())) {
+        seen.add(t.toLowerCase());
+        list.push(t);
+      }
+    }
+    return list;
+  }, [isRoadTrip, days]);
+
+  const effectiveStayDestination = isRoadTrip && activeTown ? activeTown : destination;
+
   const curatedHotels = liveHotels && liveHotels.length > 0 ? liveHotels : travelApi.getHotels();
   const preferredChains = useMemo(
     () => loyaltyPrograms.filter((p) => p.category === 'hotel').map((p) => p.provider),
@@ -89,12 +120,12 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   }, [travelers]);
 
   useEffect(() => {
-    if (subTab !== 'stays' || !destination) return;
+    if (subTab !== 'stays' || !effectiveStayDestination) return;
     let cancelled = false;
     setIsLoadingHotels(true);
     travelApi
       .searchHotels({
-        destination,
+        destination: effectiveStayDestination,
         datesLabel,
         adults: parsedAdults,
         preferredChains: preferredChains.length > 0 ? preferredChains : undefined,
@@ -112,18 +143,30 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subTab, destination, datesLabel, parsedAdults, preferredChainsKey]);
+  }, [subTab, effectiveStayDestination, datesLabel, parsedAdults, preferredChainsKey]);
 
-  // Merge live SerpApi hotel rates with curated stays (preserving curated insider sleep tips when names match)
+  // Merge live SerpApi hotel rates with curated stays (preserving curated insider sleep tips & overnightTown tags)
   const hotels = useMemo(() => {
-    const liveList = liveHotelRes?.hotels || [];
-    if (liveList.length === 0) return curatedHotels;
+    const townScopedCurated =
+      isRoadTrip && activeTown
+        ? curatedHotels.filter(
+            (h) =>
+              h.overnightTown?.toLowerCase() === activeTown.toLowerCase() ||
+              h.neighborhood.toLowerCase().includes(activeTown.toLowerCase().split(',')[0])
+          )
+        : curatedHotels;
+    const baseCurated = townScopedCurated.length > 0 ? townScopedCurated : curatedHotels;
+
+    const liveList = (liveHotelRes?.hotels || []).map((lh) =>
+      isRoadTrip && activeTown ? { ...lh, overnightTown: activeTown } : lh
+    );
+    if (liveList.length === 0) return baseCurated;
     const seenNames = new Set<string>();
     const merged: HotelItem[] = [];
     for (const lh of liveList) {
       const key = lh.name.toLowerCase().trim();
       seenNames.add(key);
-      const match = curatedHotels.find(
+      const match = baseCurated.find(
         (ch) =>
           ch.name.toLowerCase().includes(key.slice(0, 14)) ||
           key.includes(ch.name.toLowerCase().slice(0, 14))
@@ -132,6 +175,7 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
         match
           ? {
               ...lh,
+              overnightTown: lh.overnightTown || match.overnightTown,
               whyChoose: match.whyChoose || lh.whyChoose,
               pickLabel: match.pickLabel || lh.pickLabel,
               deepDive: match.deepDive.length > 0 ? match.deepDive : lh.deepDive,
@@ -141,16 +185,22 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
           : lh
       );
     }
-    for (const ch of curatedHotels) {
+    for (const ch of baseCurated) {
       const key = ch.name.toLowerCase().trim();
       if (!seenNames.has(key) && merged.length < 10) {
         merged.push(ch);
       }
     }
     return merged;
-  }, [curatedHotels, liveHotelRes]);
+  }, [curatedHotels, liveHotelRes, isRoadTrip, activeTown]);
 
-  const bookedHotel = items.find((i) => i.type === 'hotel');
+  const bookedHotels = items.filter((i) => i.type === 'hotel');
+  const bookedHotel =
+    isRoadTrip && activeTown
+      ? bookedHotels.find(
+          (h) => h.hotelDetails?.overnightTown?.toLowerCase() === activeTown.toLowerCase()
+        )
+      : bookedHotels[0];
   const bookedFlight = items.find((i) => i.type === 'flight');
   const bookedTours = items.filter((i) => i.type === 'activity');
   const totalCost = items.reduce((s, i) => s + (i.price || 0), 0);
@@ -173,17 +223,28 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
           <div className="flex flex-wrap items-center gap-3 text-[13px] font-medium text-[#2C333A]">
             <span className="inline-flex items-center gap-1.5">
               <CheckCircle2
-                className={`w-4 h-4 ${bookedHotel ? 'text-emerald-600' : 'text-[#8A9097] opacity-40'}`}
+                className={`w-4 h-4 ${bookedHotels.length > 0 ? 'text-emerald-600' : 'text-[#8A9097] opacity-40'}`}
               />
-              <span>Stay: {bookedHotel ? bookedHotel.title : 'Not selected'}</span>
+              <span>
+                {isRoadTrip
+                  ? `Stays: ${bookedHotels.length}${overnightTowns.length > 0 ? `/${overnightTowns.length} stops` : ' selected'}`
+                  : `Stay: ${bookedHotel ? bookedHotel.title : 'Not selected'}`}
+              </span>
             </span>
             <span className="text-black/15">·</span>
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2
-                className={`w-4 h-4 ${bookedFlight ? 'text-emerald-600' : 'text-[#8A9097] opacity-40'}`}
-              />
-              <span>Flights: {bookedFlight ? bookedFlight.flightDetails?.outbound.airline : 'Not selected'}</span>
-            </span>
+            {isDriveFromHome ? (
+              <span className="inline-flex items-center gap-1.5 text-[#2C333A]">
+                <Car className="w-4 h-4 text-[#C85A17]" />
+                <span>Driving from {roadTrip?.startCity || 'home'}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2
+                  className={`w-4 h-4 ${bookedFlight ? 'text-emerald-600' : 'text-[#8A9097] opacity-40'}`}
+                />
+                <span>Flights: {bookedFlight ? bookedFlight.flightDetails?.outbound.airline : 'Not selected'}</span>
+              </span>
+            )}
             {bookedTours.length > 0 && (
               <>
                 <span className="text-black/15">·</span>
@@ -228,23 +289,25 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
             }`}
           >
             <BedDouble className="w-4 h-4" />
-            <span>Boutique Stays</span>
-            {bookedHotel && <span className="text-[11px] opacity-80">✓</span>}
+            <span>{isRoadTrip ? 'Overnight Stays' : 'Boutique Stays'}</span>
+            {bookedHotels.length > 0 && <span className="text-[11px] opacity-80">✓</span>}
           </button>
 
-          <button
-            type="button"
-            onClick={() => onChangeSubTab('flights')}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium border transition-all cursor-pointer ${
-              subTab === 'flights'
-                ? 'bg-[#0E2034] border-[#0E2034] shadow-xs'
-                : 'bg-white text-[#2C333A] border-black/[0.09] hover:border-black/[0.22]'
-            }`}
-          >
-            <Plane className="w-4 h-4" />
-            <span>Flights · {destination}</span>
-            {bookedFlight && <span className="text-[11px] opacity-80">✓</span>}
-          </button>
+          {!isDriveFromHome && (
+            <button
+              type="button"
+              onClick={() => onChangeSubTab('flights')}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium border transition-all cursor-pointer ${
+                subTab === 'flights'
+                  ? 'bg-[#0E2034] border-[#0E2034] shadow-xs'
+                  : 'bg-white text-[#2C333A] border-black/[0.09] hover:border-black/[0.22]'
+              }`}
+            >
+              <Plane className="w-4 h-4" />
+              <span>Flights · {isRoadTrip && roadTrip?.startCity ? roadTrip.startCity : destination}</span>
+              {bookedFlight && <span className="text-[11px] opacity-80">✓</span>}
+            </button>
+          )}
         </div>
 
         {onOpenSharePoll && (
@@ -325,7 +388,51 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
         ) : null)}
 
       {subTab === 'stays' ? (
-        <div className="space-y-7">
+        <div className="space-y-6">
+          {/* Road Trip Overnight Town Switcher */}
+          {isRoadTrip && overnightTowns.length > 0 && onChangeActiveTown && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#7B828A] mr-1">
+                Overnight stop:
+              </span>
+              <button
+                type="button"
+                onClick={() => onChangeActiveTown(null)}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-medium border transition-all cursor-pointer ${
+                  !activeTown
+                    ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                    : 'bg-white text-[#2C333A] border-black/[0.09] hover:border-black/[0.22]'
+                }`}
+                style={!activeTown ? { color: '#FFFFFF' } : undefined}
+              >
+                All stops
+              </button>
+              {overnightTowns.map((town) => {
+                const isSelected = activeTown?.toLowerCase() === town.toLowerCase();
+                const hasBooked = bookedHotels.some(
+                  (h) => h.hotelDetails?.overnightTown?.toLowerCase() === town.toLowerCase()
+                );
+                return (
+                  <button
+                    key={town}
+                    type="button"
+                    onClick={() => onChangeActiveTown(town)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                        : 'bg-white text-[#2C333A] border-black/[0.09] hover:border-black/[0.22]'
+                    }`}
+                    style={isSelected ? { color: '#FFFFFF' } : undefined}
+                  >
+                    <MapPin className="w-3 h-3" />
+                    <span>{town}</span>
+                    {hasBooked && <span className="text-emerald-500 font-bold">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {bookedHotel && bookedHotel.hotelDetails && (
             <div className="rounded-[18px] bg-[#ECEAE2] p-3.5 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -335,7 +442,11 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
                   className="w-12 h-12 rounded-xl object-cover shrink-0"
                 />
                 <div className="min-w-0">
-                  <div className="text-[12px] font-semibold text-[#C85A17]">Selected Stay</div>
+                  <div className="text-[12px] font-semibold text-[#C85A17]">
+                    {bookedHotel.hotelDetails.overnightTown
+                      ? `Selected Stay · ${bookedHotel.hotelDetails.overnightTown}`
+                      : 'Selected Stay'}
+                  </div>
                   <div className="text-[14px] font-semibold text-[#14191F] truncate">
                     {bookedHotel.title} · {bookedHotel.hotelDetails.roomName}
                   </div>
@@ -348,7 +459,7 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
           )}
 
           <HotelSearchCarousel
-            location={destination}
+            location={effectiveStayDestination}
             dates={datesLabel}
             guests={`1 room, ${travelers}`}
             hotels={hotels}

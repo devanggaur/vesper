@@ -135,6 +135,7 @@ export interface HotelItem {
   livePricing?: boolean;
   freeCancellation?: boolean;
   amenities?: string[];
+  overnightTown?: string;
   image: string;
   gallery: string[];
   coords: Coordinates;
@@ -199,6 +200,7 @@ export interface TripSavedItem {
     checkIn: string;
     checkOut: string;
     roomName: string;
+    overnightTown?: string;
   };
   bookingMeta?: ItemBookingMeta;
 }
@@ -215,11 +217,25 @@ export interface ChatMessage {
   blocks?: ChatBlock[];
 }
 
+export type TripMode = 'city' | 'roadtrip';
+
+export interface RoadTripConfig {
+  startCity: string;
+  transportMode: 'drive_home' | 'fly_drive';
+  maxDriveHoursPerDay: 'under_2h' | '2_to_4h' | '4h_plus';
+  overnightTowns?: string[];
+}
+
 export interface TripDayMeta {
   key: string;
   short: string;
   themeLabel: string;
   dotColor: string;
+  legFrom?: string;
+  legTo?: string;
+  overnightTown?: string;
+  estDriveMinutes?: number;
+  estDriveMiles?: number;
 }
 
 export interface DiscoverSection {
@@ -263,11 +279,19 @@ export interface LiveTripMetadata {
   travelers: string;
   isOwner?: boolean;
   ownerName?: string | null;
+  tripMode?: TripMode;
+  roadTripDefaults?: {
+    startCity: string;
+    transportMode: 'drive_home' | 'fly_drive';
+    overnightTowns?: string[];
+  } | null;
   tasteProfile?: {
     travelers: string;
     vibes: string[];
     pace: 'Unhurried' | 'Balanced' | 'Packed';
     splurge: 'Smart' | 'Elevated' | 'Iconic';
+    tripMode?: TripMode;
+    roadTrip?: RoadTripConfig;
   } | null;
   catalog?: TripCatalogPayload | null;
 }

@@ -6,6 +6,7 @@ import {
   buildDiscoverBlueprint,
   CuratedHotelPick,
   CuratedNamedPick,
+  detectRoadTripPrompt,
   generateCoPilotTurn,
   ItineraryMutation,
   organizeStopsWithGemini,
@@ -240,6 +241,7 @@ function toHotelItem(
     bookingUrl: gp.website,
     pricePerNight: Math.round(twoNightTotal / 2),
     livePricing: false,
+    ...(curated?.overnightTown ? { overnightTown: curated.overnightTown } : {}),
     image: gallery[0] || '',
     gallery: gallery.length > 0 ? gallery : [''],
     coords: { lat: gp.lat, lng: gp.lng },
@@ -320,6 +322,19 @@ function toHotelItem(
   };
 }
 
+function deriveTripMode(trip: {
+  prompt?: string;
+  taste_profile?: Record<string, unknown> | null;
+  day_labels?: Array<{ legFrom?: string; overnightTown?: string }>;
+}): 'city' | 'roadtrip' {
+  const tpMode = trip.taste_profile?.tripMode;
+  if (tpMode === 'roadtrip' || tpMode === 'city') return tpMode;
+  if (Array.isArray(trip.day_labels) && trip.day_labels.some((d) => Boolean(d.legFrom || d.overnightTown))) {
+    return 'roadtrip';
+  }
+  return trip.prompt && detectRoadTripPrompt(trip.prompt) ? 'roadtrip' : 'city';
+}
+
 /* ── Route Handlers ─────────────────────────────────────────────────────── */
 
 /** GET /api/trips — Lists recent persisted trips (scoped to signed-in user when authenticated). */
@@ -371,6 +386,7 @@ tripsRoutes.get('/slug/:slug', async (c) => {
       travelers: trip.travelers,
       isOwner,
       ownerName,
+      tripMode: deriveTripMode(trip),
       tasteProfile: trip.taste_profile,
       catalog: trip.catalog,
     },
@@ -419,6 +435,7 @@ tripsRoutes.get('/:id', async (c) => {
       travelers: trip.travelers,
       isOwner,
       ownerName,
+      tripMode: deriveTripMode(trip),
       tasteProfile: trip.taste_profile,
       catalog: trip.catalog,
     },
@@ -546,6 +563,8 @@ tripsRoutes.post('/', async (c) => {
       center,
       heroImage,
       travelers: trip.travelers,
+      tripMode: parsed.tripMode,
+      roadTripDefaults: parsed.roadTripDefaults ?? null,
     },
     messages: initialMessages,
   });
@@ -556,6 +575,15 @@ const composeSchema = z.object({
   vibes: z.array(z.string()).min(1),
   pace: z.enum(['Unhurried', 'Balanced', 'Packed']),
   splurge: z.enum(['Smart', 'Elevated', 'Iconic']),
+  tripMode: z.enum(['city', 'roadtrip']).optional(),
+  roadTrip: z
+    .object({
+      startCity: z.string(),
+      transportMode: z.enum(['drive_home', 'fly_drive']),
+      maxDriveHoursPerDay: z.enum(['under_2h', '2_to_4h', '4h_plus']),
+      overnightTowns: z.array(z.string()).optional(),
+    })
+    .optional(),
   loyaltyPrograms: z
     .array(
       z.object({
@@ -571,7 +599,8 @@ const composeSchema = z.object({
 /**
  * POST /api/trips/:id/compose
  * Called when the user submits the 5-Second TasteCard:
- * 1. Gemini generates tailored section queries & editorial intros for this destination + taste + loyalty wallet.
+ * 1. Gemini generates tailored section queries & editorial intros for this destination + taste + loyalty wallet
+ *    (and multi-leg driving corridor + per-town stays when `tripMode === 'roadtrip'`).
  * 2. Parallel cached Google Places (New) Text Searches fetch real activities, places, and boutique stays.
  * 3. Caches the full catalog on `trips.catalog` in Supabase so reloads cost $0.
  */
@@ -587,6 +616,8 @@ tripsRoutes.post('/:id/compose', async (c) => {
 
   const parsedBody = composeSchema.parse(await c.req.json());
   const { loyaltyPrograms: bodyLoyalty, ...taste } = parsedBody;
+  const effectiveTripMode = taste.tripMode || deriveTripMode(trip);
+  const tasteWithMode = { ...taste, tripMode: effectiveTripMode };
 
   const storedProfile = authedUser ? await store.getOrCreateProfile(authedUser) : null;
   const effectiveLoyalty =
@@ -605,27 +636,52 @@ tripsRoutes.post('/:id/compose', async (c) => {
     trip.destination,
     trip.country,
     trip.dates_label,
-    taste,
-    { hotelPrograms, airlinePrograms }
+    tasteWithMode,
+    { hotelPrograms, airlinePrograms },
+    Math.max(2, trip.day_labels.length)
   );
+
+  // Merge Gemini road-trip corridor legs into trip.day_labels when in Road Trip Mode
+  let updatedDays = trip.day_labels;
+  if (effectiveTripMode === 'roadtrip' && blueprint.roadTripLegs && blueprint.roadTripLegs.length > 0) {
+    updatedDays = trip.day_labels.map((day, idx) => {
+      const leg = blueprint.roadTripLegs?.find((l) => l.dayIndex === idx) || blueprint.roadTripLegs?.[idx];
+      if (!leg) return day;
+      return {
+        ...day,
+        themeLabel: leg.themeLabel || day.themeLabel,
+        legFrom: leg.legFrom,
+        legTo: leg.legTo,
+        overnightTown: leg.overnightTown,
+        estDriveMinutes: Math.round(leg.estDriveMinutes),
+        estDriveMiles: Math.round(leg.estDriveMiles),
+      };
+    });
+    const towns = Array.from(
+      new Set(updatedDays.map((d) => d.overnightTown || d.legTo).filter((t): t is string => Boolean(t)))
+    );
+    if (tasteWithMode.roadTrip) {
+      tasteWithMode.roadTrip = { ...tasteWithMode.roadTrip, overnightTowns: towns };
+    }
+  }
 
   // Verify all Gemini-curated named venues, experiences & boutique stays in parallel
   // against Google Places API (New) via our 14-day Supabase `place_cache`.
-  // Any pick Google Places cannot verify is dropped; thin sections backfill automatically.
+  // For Road Trip Mode, each pick verifies against its specific corridor `town` / `overnightTown`!
   const [verifiedExperiences, verifiedHotels, verifiedSections] = await Promise.all([
     blueprint.namedExperiences.length > 0
       ? Promise.all(
           blueprint.namedExperiences.slice(0, 4).map(async (pick) => ({
             pick,
-            gp: await verifyNamedPlaceCached(pick.name, trip.destination),
+            gp: await verifyNamedPlaceCached(pick.name, pick.town || trip.destination),
           }))
         )
       : Promise.resolve([]),
     blueprint.namedHotels.length > 0
       ? Promise.all(
-          blueprint.namedHotels.slice(0, 5).map(async (pick) => ({
+          blueprint.namedHotels.slice(0, 6).map(async (pick) => ({
             pick,
-            gp: await verifyNamedPlaceCached(pick.name, trip.destination),
+            gp: await verifyNamedPlaceCached(pick.name, pick.overnightTown || trip.destination),
           }))
         )
       : Promise.resolve([]),
@@ -634,7 +690,7 @@ tripsRoutes.post('/:id/compose', async (c) => {
         const namedHits = await Promise.all(
           (sec.namedPicks || []).slice(0, 4).map(async (pick) => ({
             pick,
-            gp: await verifyNamedPlaceCached(pick.name, trip.destination),
+            gp: await verifyNamedPlaceCached(pick.name, pick.town || trip.destination),
           }))
         );
         const validNamed = namedHits.filter(
@@ -652,18 +708,22 @@ tripsRoutes.post('/:id/compose', async (c) => {
 
   const seenPlaceIds = new Set<string>();
   const discoverSections: DiscoverSection[] = verifiedSections.map(({ sec, validNamed, backfill }, sIdx) => {
-    const dayKey = trip.day_labels[sIdx % trip.day_labels.length]?.key || 'Day 1';
+    const defaultDayKey = updatedDays[sIdx % updatedDays.length]?.key || 'Day 1';
     const places: PlaceItem[] = [];
 
     for (const { pick, gp } of validNamed) {
       if (seenPlaceIds.has(gp.id)) continue;
       seenPlaceIds.add(gp.id);
-      places.push(toPlaceItem(gp, sec.key, trip.destination, dayKey, places.length, pick));
+      const dayKey =
+        typeof pick.dayIndex === 'number' && updatedDays[pick.dayIndex]
+          ? updatedDays[pick.dayIndex].key
+          : defaultDayKey;
+      places.push(toPlaceItem(gp, sec.key, pick.town || trip.destination, dayKey, places.length, pick));
     }
     for (const gp of backfill) {
       if (seenPlaceIds.has(gp.id) || places.length >= 5) continue;
       seenPlaceIds.add(gp.id);
-      places.push(toPlaceItem(gp, sec.key, trip.destination, dayKey, places.length));
+      places.push(toPlaceItem(gp, sec.key, trip.destination, defaultDayKey, places.length));
     }
 
     return {
@@ -685,7 +745,7 @@ tripsRoutes.post('/:id/compose', async (c) => {
   for (const { pick, gp } of validExp) {
     if (seenActIds.has(gp.id)) continue;
     seenActIds.add(gp.id);
-    activities.push(toActivityItem(gp, trip.destination, activities.length, pick));
+    activities.push(toActivityItem(gp, pick.town || trip.destination, activities.length, pick));
   }
   for (const gp of expBackfill) {
     if (seenActIds.has(gp.id) || activities.length >= 5) continue;
@@ -704,7 +764,7 @@ tripsRoutes.post('/:id/compose', async (c) => {
   for (const { pick, gp } of validHotels) {
     if (seenHotelIds.has(gp.id)) continue;
     seenHotelIds.add(gp.id);
-    hotels.push(toHotelItem(gp, trip.destination, hotels.length, pick));
+    hotels.push(toHotelItem(gp, pick.overnightTown || trip.destination, hotels.length, pick));
   }
   for (const gp of hotelBackfill) {
     if (seenHotelIds.has(gp.id) || hotels.length >= 6) continue;
@@ -733,7 +793,8 @@ tripsRoutes.post('/:id/compose', async (c) => {
   };
 
   await store.updateTrip(trip.id, {
-    taste_profile: taste,
+    taste_profile: tasteWithMode,
+    day_labels: updatedDays,
     catalog,
     center_lat: center.lat,
     center_lng: center.lng,
@@ -758,13 +819,19 @@ tripsRoutes.post('/:id/compose', async (c) => {
     {
       id: `taste-u-${Date.now()}`,
       role: 'user',
-      text: `${taste.travelers} · ${taste.vibes.join(', ')} · ${taste.pace} pace · ${taste.splurge} style`,
+      text:
+        effectiveTripMode === 'roadtrip'
+          ? `Road trip · ${taste.travelers} · ${taste.vibes.join(', ')} · ${taste.pace} pace · ${taste.splurge} style`
+          : `${taste.travelers} · ${taste.vibes.join(', ')} · ${taste.pace} pace · ${taste.splurge} style`,
     },
     assistantMsg,
   ]);
 
   return c.json({
     catalog,
+    days: updatedDays,
+    tripMode: effectiveTripMode,
+    tasteProfile: tasteWithMode,
     center,
     heroImage,
     assistantMessage: assistantMsg,

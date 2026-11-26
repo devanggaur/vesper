@@ -44,6 +44,7 @@ export interface RouteLegEstimate {
   distanceKm: number;
   label: string;
   source: 'osrm' | 'estimate';
+  geometry?: Coordinates[];
 }
 
 export interface DiscoverCatalog {
@@ -234,12 +235,13 @@ export const travelApi = {
   },
 
   async estimateRoutes(
-    legs: Array<{ id: string; from: Coordinates; to: Coordinates }>
+    legs: Array<{ id: string; from: Coordinates; to: Coordinates }>,
+    options?: { includeGeometry?: boolean }
   ): Promise<RouteLegEstimate[]> {
     if (legs.length === 0) return [];
     const res = await apiFetch<{ legs: RouteLegEstimate[] }>('/api/routes/estimate', {
       method: 'POST',
-      body: JSON.stringify({ legs }),
+      body: JSON.stringify({ legs, includeGeometry: Boolean(options?.includeGeometry) }),
     });
     return res.legs || [];
   },
@@ -319,10 +321,19 @@ export const travelApi = {
       vibes: string[];
       pace: 'Unhurried' | 'Balanced' | 'Packed';
       splurge: 'Smart' | 'Elevated' | 'Iconic';
+      tripMode?: 'city' | 'roadtrip';
+      roadTrip?: {
+        startCity: string;
+        transportMode: 'drive_home' | 'fly_drive';
+        maxDriveHoursPerDay: 'under_2h' | '2_to_4h' | '4h_plus';
+        overnightTowns?: string[];
+      };
       loyaltyPrograms?: LoyaltyProgramEntry[];
     }
   ): Promise<{
     catalog: TripCatalogPayload;
+    days?: TripDayMeta[];
+    tripMode?: 'city' | 'roadtrip';
     center: Coordinates;
     heroImage: string;
     assistantMessage: ChatMessage;

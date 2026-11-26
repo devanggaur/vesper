@@ -77,6 +77,12 @@ export interface ParsedTripIntent {
   destination: string;
   country: string;
   tripTitle: string;
+  tripMode: 'city' | 'roadtrip';
+  roadTripDefaults?: {
+    startCity: string;
+    transportMode: 'drive_home' | 'fly_drive';
+    overnightTowns: string[];
+  };
   days: TripDayRecord[];
   welcomeSummary: string;
   searchQueries: {
@@ -88,22 +94,44 @@ export interface ParsedTripIntent {
 
 const DAY_COLORS = ['#C05A2B', '#2563EB', '#0F766E', '#7C3AED', '#D97706'];
 
+/** Deterministic fast check for road-trip prompts so Road Trip Mode activates reliably. */
+export function detectRoadTripPrompt(prompt: string): boolean {
+  return /\b(road\s*trip|roadtrip|scenic\s+drive|driving\s+(tour|trip|loop|route|itinerary)|drive\s+from|driving\s+from|pch|pacific\s+coast\s+highway|highway\s*1|route\s*66|icefields\s+parkway|blue\s+ridge|amalfi\s+drive|ring\s+road|great\s+ocean\s+road|car\s+loop|banff.*loop|campervan|rv\s+trip)\b/i.test(
+    prompt
+  );
+}
+
 /**
  * Step 1 (Called on Landing -> Workspace transition):
- * Extracts clean destination, evocative trip title, day plan skeleton, and Google Places queries
- * from any open-ended user prompt (e.g. "5-day family road trip in Banff" or "Kyoto timber & tea").
+ * Extracts clean destination, evocative trip title, tripMode (city vs. roadtrip),
+ * day plan skeleton (with route legs & overnight towns for road trips), and Google Places queries.
  */
 export async function parseTripPrompt(
   userPrompt: string,
   datesLabel: string,
   travelers: string
 ): Promise<ParsedTripIntent> {
+  const regexRoadTrip = detectRoadTripPrompt(userPrompt);
   const schema = {
     type: 'object',
     properties: {
-      destination: { type: 'string', description: 'Primary city, region, or park name, e.g. Kyoto or Banff' },
-      country: { type: 'string', description: 'Country name, e.g. Japan or Canada' },
-      tripTitle: { type: 'string', description: 'Short editorial trip title, 3-5 words, e.g. Kyoto Timber & Tea' },
+      destination: { type: 'string', description: 'Primary city, region, or scenic corridor name, e.g. Kyoto, Banff, or Pacific Coast Highway' },
+      country: { type: 'string', description: 'Country name, e.g. Japan, Canada, or USA' },
+      tripTitle: { type: 'string', description: 'Short editorial trip title, 3-5 words, e.g. Pacific Coast Highway Drive' },
+      tripMode: {
+        type: 'string',
+        enum: ['city', 'roadtrip'],
+        description: 'Use "roadtrip" whenever the prompt involves driving between multiple towns, scenic highways, loops, national park road trips, or driving from an origin city.',
+      },
+      startCity: {
+        type: 'string',
+        description: 'For road trips: starting city (e.g. "San Francisco" or "Calgary"). Empty string for city trips.',
+      },
+      transportMode: {
+        type: 'string',
+        enum: ['drive_home', 'fly_drive'],
+        description: 'For road trips: "drive_home" if starting from a stated home city (like "from San Francisco"), or "fly_drive" if flying into a distant park/region and renting a car.',
+      },
       dayLabels: {
         type: 'array',
         items: {
@@ -112,6 +140,11 @@ export async function parseTripPrompt(
             key: { type: 'string', description: 'Short calendar or day label like "Fri, Jun 19" or "Day 1"' },
             short: { type: 'string', description: 'Very short pill label like "Fri" or "Day 1"' },
             themeLabel: { type: 'string', description: '2-4 word neighborhood/theme focus for that day' },
+            legFrom: { type: 'string', description: 'For road trips: departure town for this day (e.g. "San Francisco"). Omit or empty for city trips.' },
+            legTo: { type: 'string', description: 'For road trips: arrival town for this day (e.g. "Carmel-by-the-Sea"). Omit or empty for city trips.' },
+            overnightTown: { type: 'string', description: 'For road trips: town where travelers sleep this night (e.g. "Big Sur"). Omit or empty for city trips.' },
+            estDriveMinutes: { type: 'number', description: 'For road trips: realistic total driving minutes for this day (e.g. 135). 0 for city trips.' },
+            estDriveMiles: { type: 'number', description: 'For road trips: realistic total driving miles for this day (e.g. 118). 0 for city trips.' },
           },
           required: ['key', 'short', 'themeLabel'],
         },
@@ -129,6 +162,7 @@ export async function parseTripPrompt(
       'destination',
       'country',
       'tripTitle',
+      'tripMode',
       'dayLabels',
       'welcomeSummary',
       'heroQuery',
@@ -141,22 +175,42 @@ export async function parseTripPrompt(
     destination: string;
     country: string;
     tripTitle: string;
-    dayLabels: Array<{ key: string; short: string; themeLabel: string }>;
+    tripMode?: 'city' | 'roadtrip';
+    startCity?: string;
+    transportMode?: 'drive_home' | 'fly_drive';
+    dayLabels: Array<{
+      key: string;
+      short: string;
+      themeLabel: string;
+      legFrom?: string;
+      legTo?: string;
+      overnightTown?: string;
+      estDriveMinutes?: number;
+      estDriveMiles?: number;
+    }>;
     welcomeSummary: string;
     heroQuery: string;
     activitiesQuery: string;
     hotelsQuery: string;
   }>(
     `User request: "${userPrompt}"\nSelected dates: "${datesLabel}"\nTravelers: "${travelers}"`,
-    'You are Vesper, an editorial AI travel planner. Parse any travel prompt worldwide into clean structured trip metadata. Keep dayLabels between 3 and 5 days (default 3 days for weekends). Use crisp, warm editorial phrasing.',
+    'You are Vesper, an editorial AI travel planner. Parse any travel prompt worldwide into clean structured trip metadata. Detect tripMode="roadtrip" for driving trips, scenic highway corridors, multi-town loops, or national park drives — and for road trips, populate realistic legFrom, legTo, overnightTown, estDriveMinutes, and estDriveMiles on every day! Keep dayLabels between 3 and 5 days (default 3 days for weekends). Use crisp, warm editorial phrasing.',
     schema
   );
+
+  const tripMode: 'city' | 'roadtrip' =
+    result.tripMode === 'roadtrip' || regexRoadTrip ? 'roadtrip' : 'city';
 
   const days: TripDayRecord[] = (result.dayLabels || []).slice(0, 5).map((d, idx) => ({
     key: d.key,
     short: d.short,
     themeLabel: d.themeLabel,
     dotColor: DAY_COLORS[idx % DAY_COLORS.length],
+    ...(tripMode === 'roadtrip' && d.legFrom ? { legFrom: d.legFrom } : {}),
+    ...(tripMode === 'roadtrip' && d.legTo ? { legTo: d.legTo } : {}),
+    ...(tripMode === 'roadtrip' && d.overnightTown ? { overnightTown: d.overnightTown } : {}),
+    ...(tripMode === 'roadtrip' && d.estDriveMinutes ? { estDriveMinutes: Math.round(d.estDriveMinutes) } : {}),
+    ...(tripMode === 'roadtrip' && d.estDriveMiles ? { estDriveMiles: Math.round(d.estDriveMiles) } : {}),
   }));
 
   if (days.length === 0) {
@@ -167,10 +221,24 @@ export async function parseTripPrompt(
     );
   }
 
+  const overnightTowns = Array.from(
+    new Set(days.map((d) => d.overnightTown || d.legTo).filter((t): t is string => Boolean(t && t.trim())))
+  );
+
   return {
     destination: result.destination || 'Mexico City',
     country: result.country || '',
     tripTitle: result.tripTitle || `${result.destination} Escape`,
+    tripMode,
+    ...(tripMode === 'roadtrip'
+      ? {
+          roadTripDefaults: {
+            startCity: result.startCity?.trim() || days[0]?.legFrom || '',
+            transportMode: result.transportMode === 'fly_drive' ? 'fly_drive' : 'drive_home',
+            overnightTowns,
+          },
+        }
+      : {}),
     days,
     welcomeSummary: result.welcomeSummary,
     searchQueries: {
@@ -183,6 +251,8 @@ export async function parseTripPrompt(
 
 export interface CuratedNamedPick {
   name: string;
+  town?: string;
+  dayIndex?: number;
   whySpecial: string;
   insiderTip: string;
   bestTime: string;
@@ -193,9 +263,20 @@ export interface CuratedNamedPick {
 
 export interface CuratedHotelPick {
   name: string;
+  overnightTown?: string;
   pickLabel: string;
   whyChoose: string;
   noiseAndRoomTip: string;
+}
+
+export interface RoadTripLegBlueprint {
+  dayIndex: number;
+  legFrom: string;
+  legTo: string;
+  overnightTown: string;
+  themeLabel: string;
+  estDriveMinutes: number;
+  estDriveMiles: number;
 }
 
 export interface DiscoverPlanBlueprint {
@@ -211,6 +292,7 @@ export interface DiscoverPlanBlueprint {
   namedExperiences: CuratedNamedPick[];
   hotelsQuery: string;
   namedHotels: CuratedHotelPick[];
+  roadTripLegs?: RoadTripLegBlueprint[];
   copilotMessage: string;
   suggestions: string[];
 }
@@ -226,13 +308,33 @@ export async function buildDiscoverBlueprint(
   destination: string,
   country: string,
   datesLabel: string,
-  taste: { travelers: string; vibes: string[]; pace: string; splurge: string },
-  loyaltyContext?: { hotelPrograms: string[]; airlinePrograms: string[] }
+  taste: {
+    travelers: string;
+    vibes: string[];
+    pace: string;
+    splurge: string;
+    tripMode?: 'city' | 'roadtrip';
+    roadTrip?: {
+      startCity: string;
+      transportMode: 'drive_home' | 'fly_drive';
+      maxDriveHoursPerDay: 'under_2h' | '2_to_4h' | '4h_plus';
+      overnightTowns?: string[];
+    };
+  },
+  loyaltyContext?: { hotelPrograms: string[]; airlinePrograms: string[] },
+  daysCount = 3
 ): Promise<DiscoverPlanBlueprint> {
+  const isRoadTrip = taste.tripMode === 'roadtrip';
   const namedPickSchema = {
     type: 'object',
     properties: {
-      name: { type: 'string', description: 'Exact real venue name on Google Maps' },
+      name: { type: 'string', description: 'Exact real venue, overlook, bakery, or landmark name on Google Maps' },
+      ...(isRoadTrip
+        ? {
+            town: { type: 'string', description: 'Exact town or area along the route for accurate Google Maps lookup (e.g. "Big Sur, CA" or "Carmel-by-the-Sea")' },
+            dayIndex: { type: 'number', description: `0-based day index (0 to ${Math.max(0, daysCount - 1)}) matching which route leg this stop sits on` },
+          }
+        : {}),
       whySpecial: { type: 'string', description: '1 crisp insider sentence (under 20 words)' },
       insiderTip: { type: 'string', description: '1 short practical tip (under 15 words)' },
       bestTime: { type: 'string', description: '12-hour time like "10:00 AM" or "7:30 PM"' },
@@ -240,7 +342,7 @@ export async function buildDiscoverBlueprint(
         type: 'string',
         enum: ['walk_in', 'timed_ticket', 'guided_tour', 'reservation'],
         description:
-          'walk_in for free/open sights, parks, viewpoints & casual cafés; timed_ticket for museums/monuments requiring tickets; guided_tour for bookable tours/experiences; reservation for sit-down restaurants needing a table.',
+          'walk_in for free/open sights, overlooks, parks, beaches, viewpoints & casual cafés; timed_ticket for museums/monuments/parks requiring tickets; guided_tour for bookable tours/experiences; reservation for sit-down restaurants needing a table.',
       },
       advanceLeadTime: {
         type: 'string',
@@ -251,18 +353,41 @@ export async function buildDiscoverBlueprint(
         description: 'Estimated per-person ticket/entry cost in USD (0 for free walk-ins or restaurants)',
       },
     },
-    required: ['name', 'whySpecial', 'insiderTip', 'bestTime', 'bookingType', 'advanceLeadTime', 'estimatedCostUsd'],
+    required: isRoadTrip
+      ? ['name', 'town', 'dayIndex', 'whySpecial', 'insiderTip', 'bestTime', 'bookingType', 'advanceLeadTime', 'estimatedCostUsd']
+      : ['name', 'whySpecial', 'insiderTip', 'bestTime', 'bookingType', 'advanceLeadTime', 'estimatedCostUsd'],
   };
 
   const schema = {
     type: 'object',
     properties: {
+      ...(isRoadTrip
+        ? {
+            roadTripLegs: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  dayIndex: { type: 'number' },
+                  legFrom: { type: 'string', description: 'Starting town for this day' },
+                  legTo: { type: 'string', description: 'Ending town for this day' },
+                  overnightTown: { type: 'string', description: 'Town where travelers sleep this night' },
+                  themeLabel: { type: 'string', description: 'Short 2-4 word scenic leg theme' },
+                  estDriveMinutes: { type: 'number', description: 'Realistic driving minutes respecting maxDriveHoursPerDay' },
+                  estDriveMiles: { type: 'number', description: 'Realistic driving miles for this leg' },
+                },
+                required: ['dayIndex', 'legFrom', 'legTo', 'overnightTown', 'themeLabel', 'estDriveMinutes', 'estDriveMiles'],
+              },
+              description: `Exactly ${daysCount} sequential driving legs from startCity along the corridor`,
+            },
+          }
+        : {}),
       activitiesTitle: { type: 'string', description: 'Short heading for curated experiences' },
       activitiesQuery: { type: 'string', description: 'Fallback Places query' },
       namedExperiences: {
         type: 'array',
         items: namedPickSchema,
-        description: '3 specific real signature experiences/walks/cultural landmarks',
+        description: '3 specific real signature experiences/walks/scenic stops',
       },
       hotelsQuery: { type: 'string', description: 'Fallback Places query for stays' },
       namedHotels: {
@@ -270,14 +395,26 @@ export async function buildDiscoverBlueprint(
         items: {
           type: 'object',
           properties: {
-            name: { type: 'string', description: 'Exact real hotel name' },
-            pickLabel: { type: 'string', description: '2-word badge like "Design icon", "Quiet gem"' },
+            name: { type: 'string', description: 'Exact real hotel or lodge name' },
+            ...(isRoadTrip
+              ? {
+                  overnightTown: {
+                    type: 'string',
+                    description: 'Exact overnightTown from roadTripLegs that this stay serves (include at least 1 standout stay per distinct overnightTown)',
+                  },
+                }
+              : {}),
+            pickLabel: { type: 'string', description: '2-word badge like "Design icon", "Quiet gem", "Coastal lodge"' },
             whyChoose: { type: 'string', description: '1 crisp insider sentence (under 18 words)' },
-            noiseAndRoomTip: { type: 'string', description: '1 short room/sleep tip (under 15 words)' },
+            noiseAndRoomTip: { type: 'string', description: '1 short room/sleep/parking tip (under 15 words)' },
           },
-          required: ['name', 'pickLabel', 'whyChoose', 'noiseAndRoomTip'],
+          required: isRoadTrip
+            ? ['name', 'overnightTown', 'pickLabel', 'whyChoose', 'noiseAndRoomTip']
+            : ['name', 'pickLabel', 'whyChoose', 'noiseAndRoomTip'],
         },
-        description: '4 real acclaimed hotels matching the splurge tier',
+        description: isRoadTrip
+          ? '4 to 6 real acclaimed stays distributed across EVERY distinct overnightTown along the route'
+          : '4 real acclaimed hotels matching the splurge tier',
       },
       sections: {
         type: 'array',
@@ -285,13 +422,13 @@ export async function buildDiscoverBlueprint(
           type: 'object',
           properties: {
             key: { type: 'string', enum: ['museums', 'contemporary', 'food', 'landmarks'] },
-            title: { type: 'string', description: '2-3 word editorial section title' },
+            title: { type: 'string', description: '2-4 word editorial section title (for road trips, reflect scenic stops, pit stops, food, and towns along the drive)' },
             intro: { type: 'string', description: '1 insider sentence with **bold** highlights' },
             placesQuery: { type: 'string', description: 'Fallback Places query' },
             namedPicks: {
               type: 'array',
               items: namedPickSchema,
-              description: '3 specific, real, high-taste venues (no tourist traps)',
+              description: '3 specific, real, high-taste venues distributed cleanly along the corridor/city',
             },
           },
           required: ['key', 'title', 'intro', 'placesQuery', 'namedPicks'],
@@ -304,16 +441,28 @@ export async function buildDiscoverBlueprint(
         description: '3 short follow-up prompt pills',
       },
     },
-    required: [
-      'activitiesTitle',
-      'activitiesQuery',
-      'namedExperiences',
-      'hotelsQuery',
-      'namedHotels',
-      'sections',
-      'copilotMessage',
-      'suggestions',
-    ],
+    required: isRoadTrip
+      ? [
+          'roadTripLegs',
+          'activitiesTitle',
+          'activitiesQuery',
+          'namedExperiences',
+          'hotelsQuery',
+          'namedHotels',
+          'sections',
+          'copilotMessage',
+          'suggestions',
+        ]
+      : [
+          'activitiesTitle',
+          'activitiesQuery',
+          'namedExperiences',
+          'hotelsQuery',
+          'namedHotels',
+          'sections',
+          'copilotMessage',
+          'suggestions',
+        ],
   };
 
   const hotelLoyaltyNote =
@@ -321,12 +470,27 @@ export async function buildDiscoverBlueprint(
       ? `\nTraveler's Hotel Loyalty Programs: ${loyaltyContext.hotelPrograms.join(', ')} (Include 1–2 top-tier properties from these chains in namedHotels alongside standout independent boutiques, and mention points eligibility in whyChoose!)`
       : '';
 
+  const maxDriveLabel =
+    taste.roadTrip?.maxDriveHoursPerDay === 'under_2h'
+      ? 'Under 2 hours driving per day'
+      : taste.roadTrip?.maxDriveHoursPerDay === '4h_plus'
+      ? '4+ hours driving per day is fine'
+      : '2 to 4 hours driving per day';
+
+  const roadTripPromptBlock = isRoadTrip
+    ? `\nTRIP MODE: ROAD TRIP (${daysCount} days)\nStarting city: ${taste.roadTrip?.startCity || destination}\nTransport: ${taste.roadTrip?.transportMode === 'fly_drive' ? 'Fly in & rent a car' : 'Driving from home (no flights)'}\nDaily driving limit: ${maxDriveLabel}`
+    : '';
+
+  const systemInstruction = isRoadTrip
+    ? `You are Vesper, an elite road-trip editor (Condé Nast Traveler, Road & Track, Eater). Design a logical, sequential ${daysCount}-day scenic driving route in roadTripLegs respecting the daily driving limit, with real overnightTowns along the highway. Return 4 distinct sections (keys: museums, contemporary, food, landmarks — retitle them for the road trip, e.g. "Scenic Overlooks & Parks", "Small Towns & Detours", "Roadside Bakeries & Dining", "Iconic Stops Along the Way") with 3 SPECIFIC real stops each distributed across dayIndex 0..${Math.max(0, daysCount - 1)} with accurate "town" fields! Also return 4–6 real namedHotels covering EVERY distinct overnightTown along the corridor (tag each with its exact overnightTown). Never invent fake places.`
+    : 'You are Vesper, an elite travel editor (Michelin Guide, Eater, Condé Nast Traveler). Return 4 distinct sections (keys: museums, contemporary, food, landmarks — tailor titles to the destination & vibes) with 3 SPECIFIC real venues each, 3 real experiences, and 4 real hotels matching the splurge style (respecting hotel loyalty programs when provided). Include a natural mix of free walk_in spots (viewpoints, neighborhoods, parks, casual cafés) AND timed_ticket museums/monuments plus reservation dining, accurately tagging bookingType, advanceLeadTime, and estimatedCostUsd on each pick. Be crisp and punchy; never invent fake names.';
+
   try {
     return await runStructuredJson<DiscoverPlanBlueprint>(
-      `Destination: ${destination}${country ? `, ${country}` : ''}\nDates: ${datesLabel}\nTravelers: ${taste.travelers}\nVibes: ${taste.vibes.join(', ')}\nPace: ${taste.pace}\nSplurge style: ${taste.splurge}${hotelLoyaltyNote}`,
-      'You are Vesper, an elite travel editor (Michelin Guide, Eater, Condé Nast Traveler). Return 4 distinct sections (keys: museums, contemporary, food, landmarks — tailor titles to the destination & vibes) with 3 SPECIFIC real venues each, 3 real experiences, and 4 real hotels matching the splurge style (respecting hotel loyalty programs when provided). Include a natural mix of free walk_in spots (viewpoints, neighborhoods, parks, casual cafés) AND timed_ticket museums/monuments plus reservation dining, accurately tagging bookingType, advanceLeadTime, and estimatedCostUsd on each pick. Be crisp and punchy; never invent fake names.',
+      `Destination: ${destination}${country ? `, ${country}` : ''}\nDates: ${datesLabel}\nTravelers: ${taste.travelers}\nVibes: ${taste.vibes.join(', ')}\nPace: ${taste.pace}\nSplurge style: ${taste.splurge}${roadTripPromptBlock}${hotelLoyaltyNote}`,
+      systemInstruction,
       schema,
-      { enableSearchGrounding: true, timeoutMs: 22000 }
+      { enableSearchGrounding: true, timeoutMs: 25000 }
     );
   } catch (err) {
     console.warn('[gemini] buildDiscoverBlueprint using deterministic Google Places fallback:', (err as Error)?.message);

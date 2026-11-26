@@ -20,11 +20,16 @@ import {
   ExternalLink,
   ThumbsUp,
   MessageSquare,
+  Navigation,
+  Route,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   BookingStatus,
   CollabEntityKind,
+  RoadTripConfig,
   TripDayMeta,
+  TripMode,
   TripNote,
   TripSavedItem,
   TripVote,
@@ -48,6 +53,8 @@ interface CanvasTimelineProps {
   travelers?: string;
   heroImage?: string;
   days?: TripDayMeta[];
+  tripMode?: TripMode;
+  roadTrip?: RoadTripConfig | null;
   items: TripSavedItem[];
   votes?: TripVote[];
   notes?: TripNote[];
@@ -57,7 +64,7 @@ interface CanvasTimelineProps {
   onVote?: (entityId: string, kind: CollabEntityKind, vote: 'up' | 'down' | 'clear') => void;
   onOpenShareModal?: () => void;
   onSearchFlights: () => void;
-  onSearchHotels: () => void;
+  onSearchHotels: (town?: string) => void;
   onOrganizeItinerary: () => void;
   onExploreDiscover: () => void;
   onInspectItem: (item: TripSavedItem) => void;
@@ -71,10 +78,55 @@ interface CanvasTimelineProps {
 
 const TIME_SLOTS = ['9:30 AM', '10:00 AM', '11:00 AM', '1:30 PM', '2:00 PM', '2:30 PM', '4:30 PM', '8:00 PM'];
 
+function formatDriveMins(totalMins: number): string {
+  const mins = Math.max(0, Math.round(totalMins));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function buildGoogleMapsDayRouteUrl(
+  dayInfo: TripDayMeta,
+  dayItems: TripSavedItem[],
+  dayHotel?: TripSavedItem | null
+): string {
+  const points: string[] = [];
+  if (dayInfo.legFrom) points.push(dayInfo.legFrom);
+  dayItems.forEach((item) => {
+    if (item.coords && item.coords.lat !== 0 && item.coords.lng !== 0) {
+      points.push(`${item.coords.lat.toFixed(5)},${item.coords.lng.toFixed(5)}`);
+    } else if (item.title) {
+      points.push(item.title);
+    }
+  });
+  if (dayHotel?.coords && dayHotel.coords.lat !== 0) {
+    points.push(`${dayHotel.coords.lat.toFixed(5)},${dayHotel.coords.lng.toFixed(5)}`);
+  } else if (dayInfo.overnightTown || dayInfo.legTo) {
+    points.push(dayInfo.overnightTown || dayInfo.legTo || '');
+  }
+  const clean = points.filter(Boolean);
+  if (clean.length < 2) {
+    const q = clean[0] || dayInfo.legTo || dayInfo.themeLabel;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+  }
+  const origin = clean[0];
+  const dest = clean[clean.length - 1];
+  const waypoints = clean.slice(1, -1).slice(0, 8);
+  const params = new URLSearchParams({
+    api: '1',
+    origin,
+    destination: dest,
+    travelmode: 'driving',
+  });
+  if (waypoints.length > 0) params.set('waypoints', waypoints.join('|'));
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
 /**
  * Day-by-day chronological itinerary view with live street-routed OSRM transit connectors
- * (instant Haversine preview hydrated by cached `/api/routes/estimate`), inline time/day
- * reassignment, shareable `/t/:slug` link copying, and `.ics` calendar export.
+ * (instant Haversine preview hydrated by cached `/api/routes/estimate`), Road Trip daily
+ * driving budgets + per-night stays + 1-tap Google Maps handoff, and `.ics` calendar export.
  */
 export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
   tripTitle,
@@ -84,6 +136,8 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
   travelers = '2 adults',
   heroImage,
   days = DEFAULT_CDMX_DAYS,
+  tripMode = 'city',
+  roadTrip = null,
   items,
   votes = [],
   notes = [],
@@ -109,14 +163,48 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
   const [liveRoutes, setLiveRoutes] = useState<Record<string, RouteLegEstimate>>({});
 
   const bannerImage = heroImage || travelApi.getDestinationHeroImage();
+  const isRoadTrip = tripMode === 'roadtrip';
+  const isDriveFromHome = isRoadTrip && roadTrip?.transportMode !== 'fly_drive';
   const flightItem = items.find((i) => i.type === 'flight');
-  const hotelItem = items.find((i) => i.type === 'hotel');
+  const hotelItems = items.filter((i) => i.type === 'hotel');
+  const hotelItem = hotelItems[0];
   const stops = items.filter((i) => i.type === 'place' || i.type === 'activity');
   const unscheduled = stops.filter((i) => i.day === 'Any time');
   const totalCost = items.reduce((sum, i) => sum + (i.price || 0), 0);
   const pendingTicketStops = stops.filter(
     (s) => itemNeedsBookingAction(s) && s.bookingMeta?.status !== 'booked'
   );
+
+  // Aggregate road trip corridor summary
+  const roadTripSummary = useMemo(() => {
+    if (!isRoadTrip) return null;
+    const totalMins = days.reduce((sum, d) => sum + (d.estDriveMinutes || 0), 0);
+    const totalMiles = days.reduce((sum, d) => sum + (d.estDriveMiles || 0), 0);
+    const corridorStops: string[] = [];
+    const pushUnique = (town?: string) => {
+      const clean = town?.trim();
+      if (!clean) return;
+      if (corridorStops[corridorStops.length - 1]?.toLowerCase() !== clean.toLowerCase()) {
+        corridorStops.push(clean);
+      }
+    };
+    if (roadTrip?.startCity) pushUnique(roadTrip.startCity);
+    days.forEach((d) => {
+      pushUnique(d.legFrom);
+      pushUnique(d.overnightTown || d.legTo);
+    });
+    const overnightCount = new Set(
+      days.map((d) => d.overnightTown?.trim().toLowerCase()).filter(Boolean)
+    ).size;
+    return { totalMins, totalMiles, corridorStops, overnightCount };
+  }, [isRoadTrip, days, roadTrip?.startCity]);
+
+  const maxDailyDriveMins =
+    roadTrip?.maxDriveHoursPerDay === 'under_2h'
+      ? 130
+      : roadTrip?.maxDriveHoursPerDay === '4h_plus'
+      ? 360
+      : 255;
 
   // Build ordered consecutive coordinate pairs across all days for 1 batched OSRM route lookup
   const routeLegs = useMemo(() => {
@@ -244,8 +332,53 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
         </div>
       </div>
 
-      {/* Flights & Stay Anchors Strip */}
-      {(!readOnly || Boolean(flightItem?.flightDetails) || Boolean(hotelItem?.hotelDetails)) && (
+      {/* Road Trip Corridor Overview Strip */}
+      {isRoadTrip && roadTripSummary && (
+        <div className="rounded-[20px] bg-white border border-black/[0.08] p-4 shadow-2xs space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-2">
+              <span className="w-8 h-8 rounded-xl bg-[#F3F2EC] flex items-center justify-center text-[#C85A17]">
+                <Route className="w-4 h-4" />
+              </span>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#C85A17]">
+                  Road Trip Corridor · {isDriveFromHome ? 'Driving from home' : 'Fly & rent a car'}
+                </div>
+                <div className="text-[13.5px] font-semibold text-[#14191F]">
+                  {roadTripSummary.corridorStops.length > 0
+                    ? roadTripSummary.corridorStops.join(' → ')
+                    : destination}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {roadTripSummary.totalMins > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F3F2EC] font-tabular text-[12px] font-semibold text-[#14191F]">
+                  <Car className="w-3.5 h-3.5 text-[#C85A17]" />
+                  <span>
+                    {formatDriveMins(roadTripSummary.totalMins)}
+                    {roadTripSummary.totalMiles > 0 ? ` · ${roadTripSummary.totalMiles} mi` : ''}
+                  </span>
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => onOpenMapDay('All')}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[12px] font-medium cursor-pointer"
+                style={{ color: '#FFFFFF' }}
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                <span>Full highway map</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Flights & Stay Anchors Strip (Hidden for Drive-from-Home road trips since stays live per-night below) */}
+      {(!isRoadTrip || !isDriveFromHome || Boolean(flightItem?.flightDetails)) &&
+        (!readOnly || Boolean(flightItem?.flightDetails) || (!isRoadTrip && Boolean(hotelItem?.hotelDetails))) && (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {flightItem && flightItem.flightDetails ? (
           <div className="rounded-[18px] bg-white border border-black/[0.08] p-3.5 shadow-2xs flex items-center justify-between gap-3">
@@ -270,7 +403,7 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
               <div className="text-[10.5px] text-[#7B828A]">2 pax RT</div>
             </div>
           </div>
-        ) : !readOnly ? (
+        ) : !readOnly && !isDriveFromHome ? (
           <button
             onClick={onSearchFlights}
             className="rounded-[18px] border border-dashed border-black/[0.2] hover:border-[#0E2034] bg-white/60 hover:bg-white p-3.5 flex items-center justify-between text-left transition-all cursor-pointer group"
@@ -281,54 +414,57 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
               </div>
               <div>
                 <div className="text-[13px] font-semibold text-[#14191F]">Add round-trip flights</div>
-                <div className="text-[11.5px] text-[#7B828A]">To {destination} · {datesLabel}</div>
+                <div className="text-[11.5px] text-[#7B828A]">
+                  To {roadTrip?.startCity || destination} · {datesLabel}
+                </div>
               </div>
             </div>
             <ArrowRight className="w-4 h-4 text-[#7B828A] group-hover:translate-x-0.5 transition-transform" />
           </button>
         ) : null}
 
-        {hotelItem && hotelItem.hotelDetails ? (
-          <div className="rounded-[18px] bg-white border border-black/[0.08] p-3.5 shadow-2xs flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <SmartImage
-                src={hotelItem.image}
-                alt={hotelItem.title}
-                className="w-12 h-12 rounded-xl object-cover shrink-0"
-              />
-              <div className="min-w-0">
-                <div className="text-[13.5px] font-semibold text-[#14191F] truncate">
-                  {hotelItem.title}
-                </div>
-                <div className="text-[11.5px] text-[#5A626A] truncate">
-                  {hotelItem.hotelDetails.roomName}
-                </div>
-                <div className="font-tabular text-[11px] text-[#7B828A]">
-                  {hotelItem.hotelDetails.checkIn} – {hotelItem.hotelDetails.checkOut}
+        {!isRoadTrip &&
+          (hotelItem && hotelItem.hotelDetails ? (
+            <div className="rounded-[18px] bg-white border border-black/[0.08] p-3.5 shadow-2xs flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <SmartImage
+                  src={hotelItem.image}
+                  alt={hotelItem.title}
+                  className="w-12 h-12 rounded-xl object-cover shrink-0"
+                />
+                <div className="min-w-0">
+                  <div className="text-[13.5px] font-semibold text-[#14191F] truncate">
+                    {hotelItem.title}
+                  </div>
+                  <div className="text-[11.5px] text-[#5A626A] truncate">
+                    {hotelItem.hotelDetails.roomName}
+                  </div>
+                  <div className="font-tabular text-[11px] text-[#7B828A]">
+                    {hotelItem.hotelDetails.checkIn} – {hotelItem.hotelDetails.checkOut}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="font-tabular text-[15px] font-semibold text-[#14191F] shrink-0">
-              ${hotelItem.price}
-            </div>
-          </div>
-        ) : !readOnly ? (
-          <button
-            onClick={onSearchHotels}
-            className="rounded-[18px] border border-dashed border-black/[0.2] hover:border-[#0E2034] bg-white/60 hover:bg-white p-3.5 flex items-center justify-between text-left transition-all cursor-pointer group"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#F3F2EC] flex items-center justify-center text-[#5A626A] group-hover:text-[#14191F]">
-                <BedDouble className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-[13px] font-semibold text-[#14191F]">Add a boutique stay</div>
-                <div className="text-[11.5px] text-[#7B828A]">Curated stays in {destination}</div>
+              <div className="font-tabular text-[15px] font-semibold text-[#14191F] shrink-0">
+                ${hotelItem.price}
               </div>
             </div>
-            <ArrowRight className="w-4 h-4 text-[#7B828A] group-hover:translate-x-0.5 transition-transform" />
-          </button>
-        ) : null}
+          ) : !readOnly ? (
+            <button
+              onClick={() => onSearchHotels()}
+              className="rounded-[18px] border border-dashed border-black/[0.2] hover:border-[#0E2034] bg-white/60 hover:bg-white p-3.5 flex items-center justify-between text-left transition-all cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#F3F2EC] flex items-center justify-center text-[#5A626A] group-hover:text-[#14191F]">
+                  <BedDouble className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-[13px] font-semibold text-[#14191F]">Add a boutique stay</div>
+                  <div className="text-[11.5px] text-[#7B828A]">Curated stays in {destination}</div>
+                </div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-[#7B828A] group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          ) : null)}
       </div>
       )}
 
@@ -438,14 +574,44 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
             .filter((i) => i.day === dayInfo.key)
             .sort((a, b) => parseStartTimeMinutes(a.time) - parseStartTimeMinutes(b.time));
 
+          const dayHotel = isRoadTrip
+            ? hotelItems.find(
+                (h) =>
+                  h.day === dayInfo.key ||
+                  (dayInfo.overnightTown &&
+                    h.hotelDetails?.overnightTown?.toLowerCase() ===
+                      dayInfo.overnightTown.toLowerCase())
+              ) || null
+            : null;
+
+          // Compute live driving total across consecutive stops on this day, falling back to Gemini leg estimate
+          let liveDayMins = 0;
+          let liveDayKm = 0;
+          for (let i = 0; i < dayItems.length - 1; i++) {
+            const est = liveRoutes[`${dayItems[i].id}->${dayItems[i + 1].id}`];
+            if (est && est.mode === 'drive') {
+              liveDayMins += est.minutes;
+              liveDayKm += est.distanceKm;
+            }
+          }
+          const displayDriveMins = Math.max(liveDayMins, dayInfo.estDriveMinutes || 0);
+          const displayDriveMiles = Math.max(
+            Math.round(liveDayKm * 0.621371),
+            dayInfo.estDriveMiles || 0
+          );
+          const isOverDriveBudget = isRoadTrip && displayDriveMins > maxDailyDriveMins;
+          const googleMapsDayUrl = isRoadTrip
+            ? buildGoogleMapsDayRouteUrl(dayInfo, dayItems, dayHotel)
+            : null;
+
           return (
             <section
               key={dayInfo.key}
               className="rounded-[22px] bg-white border border-black/[0.08] p-4 sm:p-5 shadow-2xs space-y-3"
             >
               {/* Day Header */}
-              <div className="flex items-center justify-between gap-2 pb-2 border-b border-black/[0.06]">
-                <div className="flex items-center gap-2.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-black/[0.06]">
+                <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
                   <span
                     className="w-2.5 h-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: dayInfo.dotColor }}
@@ -453,20 +619,65 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                   <h3 className="font-editorial text-[21px] font-medium text-[#14191F] leading-none">
                     {dayInfo.key}
                   </h3>
-                  <span className="text-[12px] text-[#7B828A] hidden sm:inline">
-                    · {dayInfo.themeLabel}
-                  </span>
+                  {isRoadTrip && dayInfo.legFrom && dayInfo.legTo ? (
+                    <span className="text-[12.5px] font-semibold text-[#2C333A]">
+                      {dayInfo.legFrom} → {dayInfo.legTo}
+                    </span>
+                  ) : (
+                    <span className="text-[12px] text-[#7B828A] hidden sm:inline">
+                      · {dayInfo.themeLabel}
+                    </span>
+                  )}
+
+                  {isRoadTrip && displayDriveMins > 0 && (
+                    <span
+                      title={
+                        isOverDriveBudget
+                          ? 'Exceeds your daily driving target — consider trimming a detour'
+                          : 'Estimated total driving time for this day'
+                      }
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-tabular text-[11px] font-semibold border ${
+                        isOverDriveBudget
+                          ? 'bg-amber-50 border-amber-200 text-amber-800'
+                          : 'bg-[#F3F2EC] border-black/[0.06] text-[#2C333A]'
+                      }`}
+                    >
+                      {isOverDriveBudget ? (
+                        <AlertTriangle className="w-3 h-3 text-amber-600" />
+                      ) : (
+                        <Car className="w-3 h-3 text-[#C85A17]" />
+                      )}
+                      <span>
+                        {formatDriveMins(displayDriveMins)}
+                        {displayDriveMiles > 0 ? ` · ${displayDriveMiles} mi` : ''}
+                      </span>
+                    </span>
+                  )}
                 </div>
 
-                {dayItems.length > 0 && (
-                  <button
-                    onClick={() => onOpenMapDay(dayInfo.key)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F3F2EC] hover:bg-[#ECEAE2] text-[11.5px] font-medium text-[#2C333A] transition-colors cursor-pointer"
-                  >
-                    <MapPin className="w-3 h-3" style={{ color: dayInfo.dotColor }} />
-                    <span>View route</span>
-                  </button>
-                )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {googleMapsDayUrl && (dayItems.length > 0 || (dayInfo.legFrom && dayInfo.legTo)) && (
+                    <a
+                      href={googleMapsDayUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[11.5px] font-medium transition-colors"
+                      style={{ color: '#FFFFFF' }}
+                    >
+                      <Navigation className="w-3 h-3" />
+                      <span>Drive in Maps</span>
+                    </a>
+                  )}
+                  {dayItems.length > 0 && (
+                    <button
+                      onClick={() => onOpenMapDay(dayInfo.key)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F3F2EC] hover:bg-[#ECEAE2] text-[11.5px] font-medium text-[#2C333A] transition-colors cursor-pointer"
+                    >
+                      <MapPin className="w-3 h-3" style={{ color: dayInfo.dotColor }} />
+                      <span>View route</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Day Items + Live Transit Connectors */}
@@ -801,6 +1012,62 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Per-Night Overnight Stay Slot (Road Trip Mode) */}
+              {isRoadTrip && dayInfo.overnightTown && (dayHotel || !readOnly) && (
+                <div className="pt-2 border-t border-black/[0.06]">
+                  {dayHotel ? (
+                    <div className="rounded-[16px] bg-[#FAF9F5] border border-black/[0.08] p-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <SmartImage
+                          src={dayHotel.image}
+                          alt={dayHotel.title}
+                          className="w-10 h-10 rounded-xl object-cover shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-[#C85A17]">
+                            Overnight · {dayInfo.overnightTown}
+                          </div>
+                          <div className="text-[13px] font-semibold text-[#14191F] truncate">
+                            {dayHotel.title}
+                            {dayHotel.hotelDetails?.roomName ? ` · ${dayHotel.hotelDetails.roomName}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {dayHotel.price ? (
+                          <span className="font-tabular text-[13.5px] font-semibold text-[#14191F]">
+                            ${dayHotel.price}
+                          </span>
+                        ) : null}
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            onClick={() => onSearchHotels(dayInfo.overnightTown)}
+                            className="text-[11.5px] font-medium text-[#5A626A] hover:text-[#14191F] underline cursor-pointer"
+                          >
+                            Swap
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onSearchHotels(dayInfo.overnightTown)}
+                      className="w-full rounded-[16px] border border-dashed border-black/[0.18] hover:border-[#0E2034] bg-[#FAF9F5]/70 hover:bg-white px-3.5 py-2.5 flex items-center justify-between text-left transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <BedDouble className="w-4 h-4 text-[#C85A17] shrink-0" />
+                        <span className="text-[12.5px] font-medium text-[#2C333A] truncate">
+                          Overnight in <strong className="text-[#14191F]">{dayInfo.overnightTown}</strong> · Pick stay
+                        </span>
+                      </div>
+                      <ArrowRight className="w-3.5 h-3.5 text-[#7B828A] group-hover:translate-x-0.5 transition-transform shrink-0" />
+                    </button>
+                  )}
                 </div>
               )}
             </section>

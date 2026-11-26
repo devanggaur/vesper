@@ -24,6 +24,17 @@ export interface RouteLegEstimate {
   distanceKm: number;
   label: string;
   source: 'osrm' | 'estimate';
+  geometry?: Coordinates[];
+}
+
+function downsamplePath(coords: Coordinates[], maxPoints = 64): Coordinates[] {
+  if (coords.length <= maxPoints) return coords;
+  const step = (coords.length - 1) / (maxPoints - 1);
+  const out: Coordinates[] = [];
+  for (let i = 0; i < maxPoints; i++) {
+    out.push(coords[Math.min(coords.length - 1, Math.round(i * step))]);
+  }
+  return out;
 }
 
 function haversineFallback(id: string, from: Coordinates, to: Coordinates): RouteLegEstimate {
@@ -62,14 +73,16 @@ function haversineFallback(id: string, from: Coordinates, to: Coordinates): Rout
 async function fetchOsrmLeg(
   profile: 'foot' | 'driving',
   from: Coordinates,
-  to: Coordinates
-): Promise<{ durationSec: number; distanceM: number } | null> {
+  to: Coordinates,
+  includeGeometry = false
+): Promise<{ durationSec: number; distanceM: number; geometry?: Coordinates[] } | null> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3200);
+  const timeout = setTimeout(() => controller.abort(), includeGeometry ? 4200 : 3200);
   try {
+    const geomParams = includeGeometry ? 'overview=simplified&geometries=geojson' : 'overview=false';
     const url = `https://router.project-osrm.org/route/v1/${profile}/${from.lng.toFixed(
       5
-    )},${from.lat.toFixed(5)};${to.lng.toFixed(5)},${to.lat.toFixed(5)}?overview=false`;
+    )},${from.lat.toFixed(5)};${to.lng.toFixed(5)},${to.lat.toFixed(5)}?${geomParams}`;
     const res = await fetch(url, {
       signal: controller.signal,
       headers: { 'User-Agent': 'VesperTravelApp/1.0' },
@@ -77,11 +90,26 @@ async function fetchOsrmLeg(
     if (!res.ok) return null;
     const json = (await res.json()) as {
       code?: string;
-      routes?: Array<{ duration: number; distance: number }>;
+      routes?: Array<{
+        duration: number;
+        distance: number;
+        geometry?: { coordinates?: Array<[number, number]> };
+      }>;
     };
     const route = json.routes?.[0];
     if (json.code !== 'Ok' || !route) return null;
-    return { durationSec: route.duration, distanceM: route.distance };
+    const rawCoords = route.geometry?.coordinates;
+    const geometry =
+      includeGeometry && Array.isArray(rawCoords) && rawCoords.length >= 2
+        ? downsamplePath(
+            rawCoords.map(([lng, lat]) => ({
+              lat: Number(lat.toFixed(5)),
+              lng: Number(lng.toFixed(5)),
+            })),
+            64
+          )
+        : undefined;
+    return { durationSec: route.duration, distanceM: route.distance, geometry };
   } catch {
     return null;
   } finally {
@@ -89,18 +117,22 @@ async function fetchOsrmLeg(
   }
 }
 
-export async function estimateRouteLeg(leg: RouteLegRequest): Promise<RouteLegEstimate> {
-  const key = `route:v2:${leg.from.lat.toFixed(4)},${leg.from.lng.toFixed(4)}->${leg.to.lat.toFixed(
+export async function estimateRouteLeg(
+  leg: RouteLegRequest,
+  options?: { includeGeometry?: boolean }
+): Promise<RouteLegEstimate> {
+  const includeGeometry = Boolean(options?.includeGeometry);
+  const key = `route:${includeGeometry ? 'v3g' : 'v2'}:${leg.from.lat.toFixed(4)},${leg.from.lng.toFixed(
     4
-  )},${leg.to.lng.toFixed(4)}`;
+  )}->${leg.to.lat.toFixed(4)},${leg.to.lng.toFixed(4)}`;
 
   const cached = await store.getCache<Omit<RouteLegEstimate, 'id'>>(key);
   if (cached) {
     return { id: leg.id, ...cached };
   }
 
-  // Query real OpenStreetMap road distance & duration via OSRM
-  const osrm = await fetchOsrmLeg('driving', leg.from, leg.to);
+  // Query real OpenStreetMap road distance, duration & optional highway polyline via OSRM
+  const osrm = await fetchOsrmLeg('driving', leg.from, leg.to, includeGeometry);
   if (!osrm) {
     return haversineFallback(leg.id, leg.from, leg.to);
   }
@@ -111,7 +143,7 @@ export async function estimateRouteLeg(leg: RouteLegRequest): Promise<RouteLegEs
   const minutes =
     mode === 'walk'
       ? Math.max(3, Math.round((distanceKm / 4.8) * 60))
-      : Math.max(5, Math.round((osrm.durationSec / 60) * 1.25) + 2);
+      : Math.max(5, Math.round((osrm.durationSec / 60) * 1.15) + 2);
 
   const result: Omit<RouteLegEstimate, 'id'> = {
     mode,
@@ -119,6 +151,7 @@ export async function estimateRouteLeg(leg: RouteLegRequest): Promise<RouteLegEs
     distanceKm,
     label: `${minutes} min ${mode} · ${distanceKm.toFixed(1)} km`,
     source: 'osrm',
+    ...(osrm.geometry ? { geometry: osrm.geometry } : {}),
   };
 
   await store.setCache(key, result, 30);
@@ -126,7 +159,8 @@ export async function estimateRouteLeg(leg: RouteLegRequest): Promise<RouteLegEs
 }
 
 export async function estimateRouteLegsBatch(
-  legs: RouteLegRequest[]
+  legs: RouteLegRequest[],
+  options?: { includeGeometry?: boolean }
 ): Promise<RouteLegEstimate[]> {
-  return Promise.all(legs.slice(0, 20).map((leg) => estimateRouteLeg(leg)));
+  return Promise.all(legs.slice(0, 20).map((leg) => estimateRouteLeg(leg, options)));
 }

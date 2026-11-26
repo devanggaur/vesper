@@ -27,6 +27,7 @@ import {
   LoyaltyProgramEntry,
   PlaceItem,
   TripDayMeta,
+  TripMode,
   TripNote,
   TripSavedItem,
   TripVote,
@@ -133,6 +134,19 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     initialFocusMode === 'flights' ? 'flights' : 'stays'
   );
   const [focusedMapDay, setFocusedMapDay] = useState<string>('All');
+  const [tripMode, setTripMode] = useState<TripMode>(() =>
+    /\b(road\s*trip|roadtrip|scenic\s+drive|driving\s+(tour|trip|loop|route)|drive\s+from|driving\s+from|pch|pacific\s+coast\s+highway|highway\s*1|icefields\s+parkway|ring\s+road|great\s+ocean\s+road|car\s+loop)\b/i.test(
+      initialPrompt
+    )
+      ? 'roadtrip'
+      : 'city'
+  );
+  const [roadTripDefaults, setRoadTripDefaults] = useState<{
+    startCity: string;
+    transportMode: 'drive_home' | 'fly_drive';
+    overnightTowns?: string[];
+  } | null>(null);
+  const [activeBookingsTown, setActiveBookingsTown] = useState<string | null>(null);
 
   // Ownership & Shared Guest Viewer state (guests can view, vote & note — never edit or use Co-Pilot)
   const [isTripOwner, setIsTripOwner] = useState<boolean>(!existingTripSlug);
@@ -254,7 +268,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           if (trip.days?.length) setDays(trip.days);
           setMapCenter(trip.center);
           if (trip.heroImage) setHeroImage(trip.heroImage);
-          if (trip.tasteProfile) setTasteProfile(trip.tasteProfile);
+          if (trip.tripMode) setTripMode(trip.tripMode);
+          if (trip.roadTripDefaults) setRoadTripDefaults(trip.roadTripDefaults);
+          if (trip.tasteProfile) {
+            setTasteProfile(trip.tasteProfile);
+            if (trip.tasteProfile.tripMode) setTripMode(trip.tasteProfile.tripMode);
+          }
           const urlViewParam =
             typeof window !== 'undefined'
               ? new URLSearchParams(window.location.search).get('view')
@@ -353,6 +372,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         setDatesLabel(trip.datesLabel);
         setTravelersLabel(trip.travelers);
         if (trip.days?.length) setDays(trip.days);
+        if (trip.tripMode) setTripMode(trip.tripMode);
+        if (trip.roadTripDefaults) setRoadTripDefaults(trip.roadTripDefaults);
         setMapCenter(trip.center);
         if (trip.heroImage) setHeroImage(trip.heroImage);
         setMessages(initMsgs);
@@ -394,7 +415,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   /* ── Taste Calibration -> Live Gemini + Google Places Discover Feed ──── */
   const handleTasteSubmit = async (profile: TasteProfile) => {
-    setTasteProfile(profile);
+    const resolvedMode: TripMode = profile.tripMode || tripMode;
+    setTripMode(resolvedMode);
+    setTasteProfile({ ...profile, tripMode: resolvedMode });
     onSaveDefaultTaste?.(profile);
     setTasteCalibrated(true);
     setActiveTab('discover');
@@ -405,17 +428,25 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       {
         id: `taste-u-${Date.now()}`,
         role: 'user',
-        text: `${profile.travelers} · ${profile.vibes.join(', ')} · ${profile.pace} pace · ${profile.splurge} style`,
+        text:
+          resolvedMode === 'roadtrip'
+            ? `Road trip · ${profile.travelers} · ${profile.vibes.join(', ')} · ${profile.pace} pace · ${profile.splurge} style`
+            : `${profile.travelers} · ${profile.vibes.join(', ')} · ${profile.pace} pace · ${profile.splurge} style`,
       },
     ]);
 
-    setStatusStep('Curating real places, photos & stays...');
+    setStatusStep(
+      resolvedMode === 'roadtrip'
+        ? 'Mapping scenic legs, stops & overnight towns...'
+        : 'Curating real places, photos & stays...'
+    );
 
     try {
       const resolvedTripId = liveTripId || (await tripCreatePromiseRef.current);
       if (resolvedTripId) {
         const res = await travelApi.composeTrip(resolvedTripId, {
           ...profile,
+          tripMode: resolvedMode,
           loyaltyPrograms: loyaltyPrograms.length > 0 ? loyaltyPrograms : undefined,
         });
         setActivitiesTitle(res.catalog.activitiesTitle);
@@ -423,8 +454,39 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         setPlaces(res.catalog.places);
         setDiscoverSections(res.catalog.sections);
         setHotels(res.catalog.hotels);
+        if (res.days && res.days.length > 0) setDays(res.days);
+        if (res.tripMode) setTripMode(res.tripMode);
         setMapCenter(res.center);
         if (res.heroImage) setHeroImage(res.heroImage);
+
+        // For Road Trip Mode, auto-seed the Timeline with the corridor's day-matched stops so
+        // the user immediately gets a routed multi-leg highway itinerary + real highway map!
+        if (resolvedMode === 'roadtrip' && res.catalog.places.length > 0 && savedItems.length === 0) {
+          const seeded: TripSavedItem[] = res.catalog.places.slice(0, 10).map((p) => {
+            const bt = inferPlaceBookingType(p);
+            return {
+              id: `saved-${p.id}`,
+              refId: p.id,
+              type: 'place',
+              title: p.name,
+              subtitle: p.neighborhood,
+              image: p.image,
+              day: p.suggestedDay || (res.days?.[0]?.key ?? days[0]?.key ?? 'Day 1'),
+              time: p.suggestedTime || '10:30 AM',
+              coords: p.coords,
+              bookingMeta: {
+                bookingType: bt,
+                status: bt === 'walk_in' ? 'not_needed' : 'needed',
+                advanceLeadTime: p.advanceLeadTime,
+                officialUrl: p.website,
+                estimatedCostUsd: p.estimatedCostUsd,
+              },
+            };
+          });
+          setSavedItems(seeded);
+          persistItems(seeded, resolvedTripId);
+        }
+
         setStatusStep(null);
         setIsComposingCatalog(false);
         setHasUnreadCopilot(true);
@@ -588,22 +650,41 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   const handleAddHotel = (hotel: HotelItem, room: HotelRoom, price: number) => {
     const firstDay = days[0]?.key || 'Day 1';
     const lastDay = days[days.length - 1]?.key || 'Day 3';
+    const targetTown = tripMode === 'roadtrip' ? activeBookingsTown || hotel.overnightTown : undefined;
+    const matchedDay = targetTown
+      ? days.find((d) => (d.overnightTown || d.legTo)?.toLowerCase() === targetTown.toLowerCase())
+      : undefined;
+    const assignedDay = matchedDay?.key || firstDay;
+
+    const keptItems =
+      tripMode === 'roadtrip' && targetTown
+        ? savedItems.filter(
+            (i) =>
+              !(
+                i.type === 'hotel' &&
+                (i.hotelDetails?.overnightTown?.toLowerCase() === targetTown.toLowerCase() ||
+                  i.day === assignedDay)
+              )
+          )
+        : savedItems.filter((i) => i.type !== 'hotel');
+
     const next: TripSavedItem[] = [
-      ...savedItems.filter((i) => i.type !== 'hotel'),
+      ...keptItems,
       {
-        id: `saved-${hotel.id}`,
+        id: targetTown ? `saved-${hotel.id}-${assignedDay}` : `saved-${hotel.id}`,
         refId: hotel.id,
         type: 'hotel',
         title: hotel.name,
         subtitle: room.name,
         image: hotel.image,
-        day: firstDay,
+        day: assignedDay,
         price,
         coords: hotel.coords,
         hotelDetails: {
-          checkIn: firstDay,
-          checkOut: lastDay,
+          checkIn: assignedDay,
+          checkOut: targetTown ? assignedDay : lastDay,
           roomName: room.name,
+          ...(targetTown ? { overnightTown: targetTown } : {}),
         },
         bookingMeta: {
           bookingType: 'reservation',
@@ -1202,6 +1283,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             <div className="h-full w-full p-3 sm:p-4 pb-20 lg:pb-4">
               <InteractiveMap
                 mapStage="pins"
+                tripMode={tripMode}
                 center={mapCenter}
                 days={days}
                 places={places}
@@ -1222,6 +1304,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                     <TasteCard
                       destination={destination}
                       dates={datesLabel}
+                      detectedTripMode={tripMode}
+                      initialStartCity={
+                        roadTripDefaults?.startCity ||
+                        homeAirport?.replace(/\s*\([A-Z]{3}\)\s*$/, '') ||
+                        ''
+                      }
+                      initialTransportMode={roadTripDefaults?.transportMode || 'drive_home'}
                       initialProfile={tasteProfile || savedDefaultTaste}
                       onSubmit={handleTasteSubmit}
                     />
@@ -1338,6 +1427,18 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   travelers={travelersLabel}
                   heroImage={heroImage}
                   days={days}
+                  tripMode={tripMode}
+                  roadTrip={
+                    tasteProfile?.roadTrip ||
+                    (roadTripDefaults
+                      ? {
+                          startCity: roadTripDefaults.startCity,
+                          transportMode: roadTripDefaults.transportMode,
+                          maxDriveHoursPerDay: '2_to_4h',
+                          overnightTowns: roadTripDefaults.overnightTowns,
+                        }
+                      : null)
+                  }
                   items={savedItems}
                   votes={votes}
                   notes={notes}
@@ -1350,7 +1451,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                     setBookingsSubTab('flights');
                     setActiveTab('bookings');
                   }}
-                  onSearchHotels={() => {
+                  onSearchHotels={(town) => {
+                    setActiveBookingsTown(town || null);
                     setBookingsSubTab('stays');
                     setActiveTab('bookings');
                   }}
@@ -1392,6 +1494,16 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   destination={destination}
                   datesLabel={datesLabel}
                   travelers={travelersLabel}
+                  days={days}
+                  tripMode={tripMode}
+                  roadTrip={tasteProfile?.roadTrip || (roadTripDefaults ? {
+                    startCity: roadTripDefaults.startCity,
+                    transportMode: roadTripDefaults.transportMode,
+                    maxDriveHoursPerDay: '2_to_4h',
+                    overnightTowns: roadTripDefaults.overnightTowns,
+                  } : null)}
+                  activeTown={activeBookingsTown}
+                  onChangeActiveTown={setActiveBookingsTown}
                   hotels={hotels}
                   items={savedItems}
                   likedIds={likedIds}

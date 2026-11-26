@@ -1,14 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Minus, AlertCircle, Loader2 } from 'lucide-react';
-import { Coordinates, HotelItem, PlaceItem, TripDayMeta, TripSavedItem } from '../../types/travel';
+import { Coordinates, HotelItem, PlaceItem, TripDayMeta, TripMode, TripSavedItem } from '../../types/travel';
 import { buildCurvedArcPoints } from '../../utils/geo';
 import { parseStartTimeMinutes } from '../../utils/time';
 import { loadGoogleMaps } from '../../utils/googleMapsLoader';
 import { getGoogleMapStyles } from '../../utils/googleMapStyles';
-import { DEFAULT_CDMX_DAYS } from '../../services/travelApi';
+import { DEFAULT_CDMX_DAYS, travelApi } from '../../services/travelApi';
 
 interface InteractiveMapProps {
   mapStage: 'continent' | 'city' | 'pins';
+  tripMode?: TripMode;
   center?: Coordinates;
   days?: TripDayMeta[];
   places: PlaceItem[];
@@ -81,6 +82,7 @@ function createHtmlOverlay(
  */
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   mapStage,
+  tripMode = 'city',
   center = { lat: 19.426, lng: -99.172 },
   days = DEFAULT_CDMX_DAYS,
   places,
@@ -95,6 +97,64 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const [dayFilter, setDayFilter] = useState<string>(focusedDay);
   const [isReady, setIsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [highwayPolylines, setHighwayPolylines] = useState<Record<string, Coordinates[]>>({});
+
+  // In Road Trip Mode, fetch real OSRM road-following highway geometry for consecutive stops
+  const roadLegs = useMemo(() => {
+    if (tripMode !== 'roadtrip') return [];
+    const legs: Array<{ id: string; from: Coordinates; to: Coordinates }> = [];
+    let prevDayLast: TripSavedItem | null = null;
+    days.forEach((meta) => {
+      const dayStops = savedItems
+        .filter((i) => (i.type === 'place' || i.type === 'activity') && i.day === meta.key && i.coords)
+        .sort((a, b) => parseStartTimeMinutes(a.time) - parseStartTimeMinutes(b.time));
+      if (prevDayLast?.coords && dayStops[0]?.coords) {
+        legs.push({
+          id: `${prevDayLast.id}->${dayStops[0].id}`,
+          from: prevDayLast.coords,
+          to: dayStops[0].coords,
+        });
+      }
+      for (let i = 0; i < dayStops.length - 1; i++) {
+        if (dayStops[i].coords && dayStops[i + 1].coords) {
+          legs.push({
+            id: `${dayStops[i].id}->${dayStops[i + 1].id}`,
+            from: dayStops[i].coords!,
+            to: dayStops[i + 1].coords!,
+          });
+        }
+      }
+      if (dayStops.length > 0) prevDayLast = dayStops[dayStops.length - 1];
+    });
+    return legs;
+  }, [tripMode, days, savedItems]);
+
+  const roadLegsSig = useMemo(
+    () => roadLegs.map((l) => `${l.id}:${l.from.lat.toFixed(3)},${l.to.lat.toFixed(3)}`).join('|'),
+    [roadLegs]
+  );
+
+  useEffect(() => {
+    if (tripMode !== 'roadtrip' || roadLegs.length === 0) return;
+    let cancelled = false;
+    travelApi
+      .estimateRoutes(roadLegs, { includeGeometry: true })
+      .then((res) => {
+        if (cancelled) return;
+        const mapGeom: Record<string, Coordinates[]> = {};
+        res.forEach((r) => {
+          if (r.geometry && r.geometry.length >= 2) {
+            mapGeom[r.id] = r.geometry;
+          }
+        });
+        setHighwayPolylines(mapGeom);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripMode, roadLegsSig]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -184,58 +244,108 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     const stopOrderBadge = new Map<string, { num: number; color: string }>();
 
-    // Curved quadratic Bezier route arcs for each day
+    // Real OSRM Highway Polylines (Road Trip Mode) or Curved Bezier Route Arcs (City Mode)
+    let prevDayLastStop: TripSavedItem | null = null;
     days.forEach((meta) => {
-      if (dayFilter !== 'All' && dayFilter !== meta.key) return;
-
       const dayStops = savedItems
         .filter((i) => (i.type === 'place' || i.type === 'activity') && i.day === meta.key && i.coords)
         .sort((a, b) => parseStartTimeMinutes(a.time) - parseStartTimeMinutes(b.time));
 
       const lineColor = meta.dotColor;
 
-      dayStops.forEach((st, idx) => {
-        stopOrderBadge.set(st.refId, { num: idx + 1, color: lineColor });
-      });
-
-      for (let i = 0; i < dayStops.length - 1; i++) {
-        const pts = buildCurvedArcPoints(dayStops[i].coords!, dayStops[i + 1].coords!).map(
-          ([lat, lng]) => ({ lat, lng })
-        );
-
-        // Soft outer halo
-        const halo = new g.maps.Polyline({
-          path: pts,
-          geodesic: false,
-          strokeColor: lineColor,
-          strokeOpacity: 0.16,
-          strokeWeight: 7,
-          map,
+      if (dayFilter === 'All' || dayFilter === meta.key) {
+        dayStops.forEach((st, idx) => {
+          stopOrderBadge.set(st.refId, { num: idx + 1, color: lineColor });
         });
 
-        // Crisp dashed inner route arc
-        const dashed = new g.maps.Polyline({
-          path: pts,
-          geodesic: false,
-          strokeOpacity: 0,
-          icons: [
-            {
-              icon: {
-                path: 'M 0,-1 0,1',
-                strokeOpacity: 0.92,
-                strokeColor: lineColor,
-                strokeWeight: 2.6,
-                scale: 3.5,
-              },
-              offset: '0',
-              repeat: '14px',
-            },
-          ],
-          map,
-        });
+        // Bridge previous day's final stop to today's first stop with a real highway connector in Road Trip Mode
+        if (
+          tripMode === 'roadtrip' &&
+          dayFilter === 'All' &&
+          prevDayLastStop?.coords &&
+          dayStops[0]?.coords
+        ) {
+          const bridgeId = `${prevDayLastStop.id}->${dayStops[0].id}`;
+          const bridgePath =
+            highwayPolylines[bridgeId] ||
+            buildCurvedArcPoints(prevDayLastStop.coords, dayStops[0].coords).map(([lat, lng]) => ({
+              lat,
+              lng,
+            }));
+          const bridgeLine = new g.maps.Polyline({
+            path: bridgePath,
+            geodesic: false,
+            strokeColor: lineColor,
+            strokeOpacity: highwayPolylines[bridgeId] ? 0.72 : 0.45,
+            strokeWeight: 3,
+            map,
+          });
+          polylinesRef.current.push(bridgeLine);
+        }
 
-        polylinesRef.current.push(halo, dashed);
+        for (let i = 0; i < dayStops.length - 1; i++) {
+          const legId = `${dayStops[i].id}->${dayStops[i + 1].id}`;
+          const realGeom = tripMode === 'roadtrip' ? highwayPolylines[legId] : undefined;
+          const pts =
+            realGeom ||
+            buildCurvedArcPoints(dayStops[i].coords!, dayStops[i + 1].coords!).map(
+              ([lat, lng]) => ({ lat, lng })
+            );
+
+          if (realGeom) {
+            // Solid crisp scenic highway polyline + soft outer glow
+            const halo = new g.maps.Polyline({
+              path: pts,
+              geodesic: false,
+              strokeColor: lineColor,
+              strokeOpacity: 0.22,
+              strokeWeight: 9,
+              map,
+            });
+            const road = new g.maps.Polyline({
+              path: pts,
+              geodesic: false,
+              strokeColor: lineColor,
+              strokeOpacity: 0.94,
+              strokeWeight: 3.6,
+              map,
+            });
+            polylinesRef.current.push(halo, road);
+          } else {
+            // Soft outer halo + crisp dashed Bezier arc for city walking/transit
+            const halo = new g.maps.Polyline({
+              path: pts,
+              geodesic: false,
+              strokeColor: lineColor,
+              strokeOpacity: 0.16,
+              strokeWeight: 7,
+              map,
+            });
+            const dashed = new g.maps.Polyline({
+              path: pts,
+              geodesic: false,
+              strokeOpacity: 0,
+              icons: [
+                {
+                  icon: {
+                    path: 'M 0,-1 0,1',
+                    strokeOpacity: 0.92,
+                    strokeColor: lineColor,
+                    strokeWeight: 2.6,
+                    scale: 3.5,
+                  },
+                  offset: '0',
+                  repeat: '14px',
+                },
+              ],
+              map,
+            });
+            polylinesRef.current.push(halo, dashed);
+          }
+        }
       }
+
+      if (dayStops.length > 0) prevDayLastStop = dayStops[dayStops.length - 1];
     });
 
     const savedRefIds = new Set(savedItems.map((s) => s.refId));
@@ -317,7 +427,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       });
     }
 
-    // Auto-fit bounds cleanly when isolating a single day's stops
+    // Auto-fit bounds cleanly when isolating a single day's stops OR viewing a full road trip corridor
     if (dayFilter !== 'All') {
       const dayCoords = savedItems
         .filter((s) => s.day === dayFilter && s.coords)
@@ -330,9 +440,20 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         map.panTo(dayCoords[0]);
         map.setZoom(14);
       }
+    } else if (tripMode === 'roadtrip') {
+      const allCoords = savedItems
+        .filter((s) => (s.type === 'place' || s.type === 'activity') && s.coords)
+        .map((s) => s.coords!);
+      if (allCoords.length >= 2) {
+        const bounds = new g.maps.LatLngBounds();
+        allCoords.forEach((pt) => bounds.extend(pt));
+        map.fitBounds(bounds, 64);
+      }
     }
   }, [
     isReady,
+    tripMode,
+    highwayPolylines,
     days,
     places,
     hotels,
@@ -430,7 +551,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               color: 'var(--v-ink-muted)',
             }}
           >
-            <span>Curved arcs connect each day’s route</span>
+            <span>
+              {tripMode === 'roadtrip'
+                ? 'Live highway route by day'
+                : 'Curved arcs connect each day’s route'}
+            </span>
           </div>
         )}
       </div>

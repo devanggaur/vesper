@@ -8,6 +8,11 @@ export interface TripDayRecord {
   short: string;
   themeLabel: string;
   dotColor: string;
+  legFrom?: string;
+  legTo?: string;
+  overnightTown?: string;
+  estDriveMinutes?: number;
+  estDriveMiles?: number;
 }
 
 export interface VerifiedAuthUser {
