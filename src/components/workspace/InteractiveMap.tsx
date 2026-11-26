@@ -54,6 +54,7 @@ interface InteractiveMapProps {
   savedItems: TripSavedItem[];
   showHotelPins: boolean;
   highlightedId: string | null;
+  spotlightIds?: string[];
   focusedDay?: string;
   readOnly?: boolean;
   onSelectPlace: (place: PlaceItem) => void;
@@ -177,6 +178,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   savedItems,
   showHotelPins,
   highlightedId,
+  spotlightIds = [],
   focusedDay = 'All',
   readOnly = false,
   onSelectPlace,
@@ -621,6 +623,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     });
 
     const savedRefIds = new Set(savedItems.map((s) => s.refId));
+    const savedUnscheduledRefIds = new Set(
+      savedItems
+        .filter((s) => (s.type === 'place' || s.type === 'activity') && (!s.day || s.day === 'Any time'))
+        .map((s) => s.refId)
+    );
+    const spotlightSet = new Set(spotlightIds);
     const activeDayRefIds =
       dayFilter === 'All'
         ? null
@@ -628,6 +636,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     const defaultPinIds = new Set(places.slice(0, 8).map((p) => p.id));
     const visiblePlaces = places.filter((p) => {
+      // Always render newly added "Any time" stops, hovered cards, and Circle-to-Ask results
+      // so users immediately see pins land inside their circle and turn into ✓ when added!
+      if (savedUnscheduledRefIds.has(p.id) || spotlightSet.has(p.id) || highlightedId === p.id) {
+        return true;
+      }
       if (activeDayRefIds) return activeDayRefIds.has(p.id);
       return savedRefIds.has(p.id) || defaultPinIds.has(p.id);
     });
@@ -635,27 +648,40 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     // Place Photo-Card Markers
     visiblePlaces.forEach((place) => {
       const isSaved = savedRefIds.has(place.id);
+      const isSpotlight = spotlightSet.has(place.id);
       const badge = stopOrderBadge.get(place.id);
       const isHighlighted = highlightedId === place.id;
       const truncated = place.name.length > 15 ? `${place.name.slice(0, 14)}...` : place.name;
+
+      const borderColor = badge
+        ? badge.color
+        : isSaved
+        ? 'var(--v-cta)'
+        : isSpotlight
+        ? '#C85A17'
+        : 'var(--v-surface)';
 
       const html = `
         <div class="group flex flex-col items-center transition-transform duration-200 ${
           isHighlighted ? 'scale-110' : 'hover:scale-105'
         }">
-          <div class="w-[54px] h-[54px] rounded-[12px] p-[3px] shadow-[0_8px_22px_rgba(0,0,0,0.28)] border-2 overflow-visible relative" style="background: var(--v-surface); border-color: ${
-            badge ? badge.color : isSaved ? 'var(--v-cta)' : 'var(--v-surface)'
-          };">
+          <div class="w-[54px] h-[54px] rounded-[12px] p-[3px] shadow-[0_8px_22px_rgba(0,0,0,0.28)] border-2 overflow-visible relative" style="background: var(--v-surface); border-color: ${borderColor};">
             <img src="${place.image}" alt="${place.name.replace(/"/g, '&quot;')}" class="w-full h-full object-cover rounded-[8px]" />
             ${
               badge
                 ? `<span class="absolute -top-2 -left-2 w-5 h-5 rounded-full text-white text-[10px] font-bold flex items-center justify-center shadow" style="background: ${badge.color}; font-family: var(--v-font-mono);">${badge.num}</span>`
                 : isSaved
-                ? '<span class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold shadow" style="background: var(--v-cta); color: var(--v-cta-text);">✓</span>'
+                ? '<span class="absolute -top-2 -right-2 w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold shadow-md ring-2 ring-white" style="background: var(--v-cta); color: var(--v-cta-text);">✓</span>'
+                : isSpotlight
+                ? '<span class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] text-white flex items-center justify-center font-bold shadow" style="background: #C85A17;">★</span>'
                 : ''
             }
           </div>
-          <div class="mt-1 px-2 py-0.5 rounded-md backdrop-blur-sm shadow-sm border text-[10.5px] font-semibold whitespace-nowrap leading-tight" style="background: var(--v-surface); border-color: var(--v-border); color: var(--v-ink);">
+          <div class="mt-1 px-2 py-0.5 rounded-md backdrop-blur-sm shadow-sm border text-[10.5px] font-semibold whitespace-nowrap leading-tight" style="background: ${
+            isSaved && !badge ? 'var(--v-cta)' : 'var(--v-surface)'
+          }; border-color: ${
+            isSaved && !badge ? 'var(--v-cta)' : 'var(--v-border)'
+          }; color: ${isSaved && !badge ? 'var(--v-cta-text)' : 'var(--v-ink)'};">
             ${truncated}
           </div>
         </div>
@@ -665,12 +691,57 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         g,
         place.coords,
         html,
-        isHighlighted ? 90 : badge ? 60 : 30,
+        isHighlighted ? 95 : isSaved ? 75 : isSpotlight ? 68 : badge ? 60 : 30,
         () => onSelectPlace(place)
       );
       overlay.setMap(map);
       overlaysRef.current.push(overlay);
     });
+
+    // Guarantee any saved place/activity (e.g., added via Circle-to-Ask or Detours) ALWAYS
+    // appears on the map even if its refId isn't present in the initial `places` catalog!
+    const renderedPlaceIds = new Set(visiblePlaces.map((p) => p.id));
+    savedItems
+      .filter((s) => (s.type === 'place' || s.type === 'activity') && s.coords && !renderedPlaceIds.has(s.refId))
+      .forEach((item) => {
+        if (activeDayRefIds && item.day && item.day !== 'Any time' && !activeDayRefIds.has(item.refId)) {
+          return;
+        }
+        const badge = stopOrderBadge.get(item.refId);
+        const truncated = item.title.length > 15 ? `${item.title.slice(0, 14)}...` : item.title;
+        const borderColor = badge ? badge.color : 'var(--v-cta)';
+        const html = `
+          <div class="group flex flex-col items-center transition-transform duration-200 hover:scale-105">
+            <div class="w-[54px] h-[54px] rounded-[12px] p-[3px] shadow-[0_8px_22px_rgba(0,0,0,0.28)] border-2 overflow-visible relative" style="background: var(--v-surface); border-color: ${borderColor};">
+              <img src="${item.image}" alt="${item.title.replace(/"/g, '&quot;')}" class="w-full h-full object-cover rounded-[8px]" />
+              ${
+                badge
+                  ? `<span class="absolute -top-2 -left-2 w-5 h-5 rounded-full text-white text-[10px] font-bold flex items-center justify-center shadow" style="background: ${badge.color}; font-family: var(--v-font-mono);">${badge.num}</span>`
+                  : '<span class="absolute -top-2 -right-2 w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold shadow-md ring-2 ring-white" style="background: var(--v-cta); color: var(--v-cta-text);">✓</span>'
+              }
+            </div>
+            <div class="mt-1 px-2 py-0.5 rounded-md backdrop-blur-sm shadow-sm border text-[10.5px] font-semibold whitespace-nowrap leading-tight" style="background: ${
+              badge ? 'var(--v-surface)' : 'var(--v-cta)'
+            }; border-color: ${badge ? 'var(--v-border)' : 'var(--v-cta)'}; color: ${
+              badge ? 'var(--v-ink)' : 'var(--v-cta-text)'
+            };">
+              ${truncated}
+            </div>
+          </div>
+        `;
+        const overlay = createHtmlOverlay(
+          g,
+          item.coords!,
+          html,
+          75,
+          () => {
+            const matched = places.find((p) => p.id === item.refId);
+            if (matched) onSelectPlace(matched);
+          }
+        );
+        overlay.setMap(map);
+        overlaysRef.current.push(overlay);
+      });
 
     // Hotel Price Pills (hovering triggers live Stay Gravity spider lines!)
     if (showHotelPins && dayFilter === 'All') {
@@ -742,6 +813,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     savedItems,
     showHotelPins,
     highlightedId,
+    spotlightIds,
     activeHotelId,
     dayFilter,
     readOnly,

@@ -247,6 +247,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   };
   const [isOrganizing, setIsOrganizing] = useState(false);
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
+  const [spotlightPlaceIds, setSpotlightPlaceIds] = useState<string[]>([]);
   const [sheetTarget, setSheetTarget] = useState<EditorialSheetTarget | null>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [tripBadgePulse, setTripBadgePulse] = useState(false);
@@ -351,6 +352,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           const existing = new Set(prev.map((p) => p.id));
           return [...prev, ...res.places.filter((p) => !existing.has(p.id))];
         });
+        setSpotlightPlaceIds(res.places.map((p) => p.id));
         setMessages((prev) => [
           ...prev,
           {
@@ -1236,6 +1238,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   const fresh = recommendedPlaces.filter((p) => !existing.has(p.id));
                   return fresh.length > 0 ? [...prev, ...fresh] : prev;
                 });
+                setSpotlightPlaceIds(recommendedPlaces.map((p) => p.id));
               }
               if (recommendedHotels && recommendedHotels.length > 0) {
                 setHotels((prev) => {
@@ -1547,6 +1550,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 savedItems={savedItems}
                 showHotelPins={hotels.length > 0}
                 highlightedId={hoveredEntityId}
+                spotlightIds={spotlightPlaceIds}
                 focusedDay={focusedMapDay}
                 readOnly={false}
                 onSelectPlace={(p) => setSheetTarget({ kind: 'place', item: p })}
