@@ -269,10 +269,17 @@ export async function searchSerpApiFlights(params: {
       )}`;
 
     const combined = [...(data.best_flights || []), ...(data.other_flights || [])];
+    const seenFlightSigs = new Set<string>();
     const mapped = combined
-      .slice(0, 8)
       .map((g, idx) => mapSerpFlightGroup(g, direction, idx, googleFlightsUrl, params.adults))
-      .filter((f): f is FlightOption => f !== null);
+      .filter((f): f is FlightOption => {
+        if (!f) return false;
+        const sig = `${f.airline}|${f.flightNumber}|${f.departTime}|${f.arriveTime}|${f.priceRoundTrip}`;
+        if (seenFlightSigs.has(sig)) return false;
+        seenFlightSigs.add(sig);
+        return true;
+      })
+      .slice(0, 8);
 
     if (mapped.length === 0) return null;
 
