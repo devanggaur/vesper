@@ -933,7 +933,10 @@ tripsRoutes.post('/:id/chat', async (c) => {
 
   const turn = await generateCoPilotTurn({
     destination: trip.destination,
+    country: trip.country,
     datesLabel: trip.dates_label,
+    travelers: trip.travelers,
+    tasteProfile: trip.taste_profile,
     userMessage: body.message,
     savedItems: body.savedItems || [],
     activeTab: body.activeTab || 'discover',
@@ -1044,7 +1047,10 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
     try {
       const { fullText, meta } = await streamCoPilotTurn({
         destination: trip.destination,
+        country: trip.country,
         datesLabel: trip.dates_label,
+        travelers: trip.travelers,
+        tasteProfile: trip.taste_profile,
         days: trip.day_labels,
         userMessage: body.message,
         savedItems: body.savedItems || [],

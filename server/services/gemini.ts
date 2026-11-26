@@ -32,13 +32,14 @@ async function runStructuredJson<T>(
   prompt: string,
   systemInstruction: string,
   schema: Record<string, unknown>,
-  options?: { enableSearchGrounding?: boolean; timeoutMs?: number }
+  options?: { enableSearchGrounding?: boolean; timeoutMs?: number; models?: readonly string[] }
 ): Promise<T> {
   let lastError: unknown;
   const useSearch = Boolean(options?.enableSearchGrounding && config.geminiEnableSearchGrounding);
   const timeoutMs = options?.timeoutMs ?? config.geminiTimeoutMs;
+  const modelList = options?.models ?? config.geminiModels;
 
-  for (const model of config.geminiModels) {
+  for (const model of modelList) {
     try {
       const interaction = await withTimeout(
         ai.interactions.create({
@@ -155,7 +156,8 @@ export async function parseTripPrompt(
       },
       welcomeSummary: {
         type: 'string',
-        description: 'Warm 2-sentence Vesper welcome note referencing the exact destination and dates. May use **bold**.',
+        description:
+          'Warm, human 2-3 sentence Vesper welcome note that reacts genuinely to the destination and time of year (like a well-traveled friend excited to plan this with you), and invites them to set their quick vibe preferences on the left. May use **bold** and *italics*.',
       },
       heroQuery: { type: 'string', description: 'Best Google Places query for an iconic landmark photo of this destination' },
       activitiesQuery: { type: 'string', description: 'Google Places query for guided tours/experiences/landmarks in this destination' },
@@ -439,7 +441,11 @@ export async function buildDiscoverBlueprint(
           required: ['key', 'title', 'intro', 'placesQuery', 'namedPicks'],
         },
       },
-      copilotMessage: { type: 'string', description: '2 concise sentences naming 2-3 **bold** picks.' },
+      copilotMessage: {
+        type: 'string',
+        description:
+          'A warm, editorial 2-paragraph kickoff message (65-100 words, separated by \\n\\n). Paragraph 1 reacts naturally to the destination, season/dates, and traveler vibe like a cultured well-traveled friend. Paragraph 2 highlights 2-3 specific **bold** standout spots or stays you chose and *why* they fit their pace/style, ending with one genuine conversational question.',
+      },
       suggestions: {
         type: 'array',
         items: { type: 'string' },
@@ -495,7 +501,7 @@ export async function buildDiscoverBlueprint(
       `Destination: ${destination}${country ? `, ${country}` : ''}\nDates: ${datesLabel}\nTravelers: ${taste.travelers}\nVibes: ${taste.vibes.join(', ')}\nPace: ${taste.pace}\nSplurge style: ${taste.splurge}${roadTripPromptBlock}${hotelLoyaltyNote}`,
       systemInstruction,
       schema,
-      { enableSearchGrounding: true, timeoutMs: 25000 }
+      { enableSearchGrounding: true, timeoutMs: 25000, models: config.geminiChatModels }
     );
   } catch (err) {
     console.warn('[gemini] buildDiscoverBlueprint using deterministic Google Places fallback:', (err as Error)?.message);
@@ -635,7 +641,10 @@ export interface CoPilotResponse {
  */
 export async function generateCoPilotTurn(params: {
   destination: string;
+  country?: string;
   datesLabel: string;
+  travelers?: string;
+  tasteProfile?: Record<string, unknown> | null;
   userMessage: string;
   savedItems: TripSavedItem[];
   activeTab: string;
@@ -647,17 +656,18 @@ export async function generateCoPilotTurn(params: {
     properties: {
       reply: {
         type: 'string',
-        description: 'Helpful, crisp, opinionated travel concierge reply (2-4 sentences). Use **bold** for place names & key tips.',
+        description:
+          'Warm, human, opinionated travel concierge reply (2 short paragraphs or warm opener + concrete insider advice). Use **bold** for place names & *italics* for subtle emphasis. End with one natural follow-up question when helpful.',
       },
       bullets: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Optional 2-4 crisp bullet points if comparing options or listing tips',
+        description: 'Optional 2-4 rich, sensory bullet points when comparing spots, neighborhoods, or timing tips',
       },
       suggestions: {
         type: 'array',
         items: { type: 'string' },
-        description: '2-3 short contextual follow-up prompt pills',
+        description: '2-3 natural follow-up prompt pills',
       },
       actionType: {
         type: 'string',
@@ -670,7 +680,10 @@ export async function generateCoPilotTurn(params: {
 
   const contextPayload = {
     destination: params.destination,
+    country: params.country || undefined,
     dates: params.datesLabel,
+    travelers: params.travelers || undefined,
+    tasteProfile: params.tasteProfile || null,
     activeTab: params.activeTab,
     currentlyInspecting: params.inspectingEntity || null,
     savedStops: params.savedItems.map((i) => ({
@@ -690,8 +703,9 @@ export async function generateCoPilotTurn(params: {
     actionType: string;
   }>(
     `Trip context:\n${JSON.stringify(contextPayload, null, 2)}\n\nUser says: "${params.userMessage}"`,
-    'You are Vesper Co-Pilot, a sharp, warm, practical travel concierge embedded next to an interactive trip canvas (Discover, Timeline, Map, Bookings). Give concrete, real-world insider advice specific to the destination and whatever place/hotel the user is currently viewing. Never invent fake confirmation numbers.',
-    schema
+    'You are Vesper, a warm, well-traveled friend and boutique hotel concierge embedded beside an interactive trip canvas. Speak naturally with genuine warmth, sensory specificity, and clear personal taste—never like a dry booking bot. Avoid hollow filler ("Great question!", "Certainly!"). Tailor every suggestion to their tasteProfile, season, and pace, and close naturally with one helpful question when appropriate. Never invent fake confirmation numbers.',
+    schema,
+    { models: config.geminiChatModels }
   );
 
   const blocks: ChatBlock[] = [];
@@ -737,7 +751,10 @@ const META_CLOSE = 'VESPER_META>>>';
  */
 export async function streamCoPilotTurn(params: {
   destination: string;
+  country?: string;
   datesLabel: string;
+  travelers?: string;
+  tasteProfile?: Record<string, unknown> | null;
   days: TripDayRecord[];
   userMessage: string;
   savedItems: TripSavedItem[];
@@ -750,10 +767,19 @@ export async function streamCoPilotTurn(params: {
   recentHistory: Array<{ role: string; text: string }>;
   onTextDelta: (chunk: string) => void;
 }): Promise<{ fullText: string; meta: StreamCoPilotMetadata }> {
-  const validDays = params.days.map((d) => `"${d.key}" (${d.themeLabel})`).join(', ');
+  const validDays = params.days
+    .map((d) =>
+      d.legFrom && d.legTo
+        ? `"${d.key}" (${d.legFrom} -> ${d.legTo}, overnight ${d.overnightTown || d.legTo})`
+        : `"${d.key}" (${d.themeLabel})`
+    )
+    .join(', ');
   const contextPayload = {
     destination: params.destination,
+    country: params.country || undefined,
     dates: params.datesLabel,
+    travelers: params.travelers || undefined,
+    tasteProfile: params.tasteProfile || null,
     validDayKeys: params.days.map((d) => d.key),
     activeTab: params.activeTab,
     currentlyInspecting: params.inspectingEntity || null,
@@ -771,10 +797,18 @@ export async function streamCoPilotTurn(params: {
     recentConversation: params.recentHistory.slice(-6),
   };
 
-  const systemInstruction = `You are Vesper Co-Pilot, a sharp, warm editorial travel concierge embedded beside an interactive trip canvas (Discover, Timeline, Map, Bookings).
+  const systemInstruction = `You are Vesper, a warm, deeply knowledgeable travel friend and boutique hotel concierge sitting beside an interactive trip canvas (Discover, Timeline, Map, Bookings).
 
-Respond concisely (2–4 sentences, or short bullets when helpful). You may use **bold** for place names and key tips.
+VOICE & WARMTH (MOST IMPORTANT):
+- Write like a cultured, genuinely enthusiastic friend who just spent a month in ${params.destination} and loves sharing their favorite corners—never like a terse booking assistant or form receipt.
+- Open naturally by acknowledging the mood, season, or question (never hollow filler like "Great question!", "Certainly!", or "I'd be happy to help!").
+- Give concrete, sensory, opinionated details: *why* a spot is worth going, the best light or crowd window, what to order, or how it flows with the rest of their day and their tasteProfile (pace, vibes, splurge style, travelers).
+- Format cleanly for easy scanning:
+  - For recommendations, comparisons, or open questions: write a warm 2–3 sentence opener followed by 2–3 crisp markdown bullet points (starting with "- ") or a second short paragraph, and end with one natural conversational question to keep the planning flowing.
+  - For quick itinerary edits (add/remove/move): confirm the change warmly with a brief local tip about timing or what pairs well nearby, plus one gentle follow-up thought.
+- Use **bold** for specific venue/hotel/neighborhood names and *italics* lightly for nuance or atmosphere. Never use raw headings (#) or walls of text.
 
+ITINERARY MUTATIONS:
 If the user asks to ADD a place/restaurant/attraction, REMOVE a stop, MOVE/RESCHEDULE a stop, or SWAP a stop on their itinerary, confirm the change naturally in your reply AND include the exact mutation(s) inside the trailing metadata block.
 
 Valid day keys for this trip: ${validDays} (or "Any time" if unspecified).
@@ -796,7 +830,7 @@ Where:
 
   let lastError: unknown;
 
-  for (const model of config.geminiModels) {
+  for (const model of config.geminiChatModels) {
     let rawAccumulated = '';
     let emittedLen = 0;
     let enteredMeta = false;

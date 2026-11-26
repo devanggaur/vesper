@@ -4,7 +4,7 @@ import { ArrowRight, ArrowUp, Mic, Square, X } from 'lucide-react';
 import { ChatMessage } from '../../types/travel';
 import { BrandMark } from '../common/BrandMark';
 import { EditorialSheetTarget } from './ContextualEditorialSheet';
-import { renderInlineBold } from '../../utils/format';
+import { renderInlineBold, renderRichChatContent } from '../../utils/format';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 
 interface CoPilotRailProps {
@@ -100,70 +100,78 @@ export const CoPilotRail: React.FC<CoPilotRailProps> = ({
 
       {/* Scrollable Message Stream */}
       <div className="flex-1 overflow-y-auto thin-scrollbar px-4 py-4 space-y-4">
-        {messages.map((msg) => (
-          <div key={msg.id}>
-            {msg.role === 'user' ? (
-              <div className="flex justify-end">
-                <div className="max-w-[88%] rounded-[18px] bg-[#ECEAE2] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#14191F]">
-                  {msg.text}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {msg.blocks?.map((block, bIdx) => {
-                  if (block.type === 'text') {
-                    return (
-                      <p
-                        key={bIdx}
-                        className="text-[13.5px] leading-[1.6] text-[#2C333A] whitespace-pre-line"
-                      >
-                        {renderInlineBold(block.content)}
-                      </p>
-                    );
-                  }
-                  if (block.type === 'bullets') {
-                    return (
-                      <div key={bIdx} className="space-y-2 text-[13px] leading-[1.55] text-[#2C333A]">
-                        {block.intro && <p>{renderInlineBold(block.intro)}</p>}
-                        <ul className="space-y-1 pl-4 list-disc">
-                          {block.items.map((it, idx) => (
-                            <li key={idx}>{renderInlineBold(it)}</li>
-                          ))}
-                        </ul>
-                        {block.outro && <p>{renderInlineBold(block.outro)}</p>}
-                      </div>
-                    );
-                  }
-                  if (block.type === 'suggestions') {
-                    return (
-                      <div key={bIdx} className="space-y-1.5 pt-1">
-                        {block.items.map((suggestion) => (
-                          <button
-                            key={suggestion}
-                            type="button"
-                            onClick={() => onSend(suggestion)}
-                            className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-white hover:border-[#0E2034] border border-black/[0.08] text-left text-[12.5px] font-medium text-[#14191F] transition-all cursor-pointer group"
-                          >
-                            <span className="truncate pr-2">{suggestion}</span>
-                            <ArrowRight className="w-3.5 h-3.5 text-[#7B828A] group-hover:translate-x-0.5 transition-transform shrink-0" />
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
-            )}
-          </div>
-        ))}
+        {messages.map((msg) => {
+          const isCalibrationPill =
+            msg.role === 'user' &&
+            Boolean(
+              msg.id.startsWith('taste-u-') ||
+                (msg.text &&
+                  (/^(Calibrated|Road trip)\s*·/.test(msg.text) ||
+                    /pace\s*·\s*(Smart|Elevated|Iconic)\s+style$/i.test(msg.text)))
+            );
 
-        {streamingText && (
-          <p className="text-[13.5px] leading-[1.6] text-[#2C333A] whitespace-pre-line">
-            {renderInlineBold(streamingText)}
-            <span className="inline-block w-1.5 h-3.5 ml-1 align-middle rounded-[2px] bg-[#C85A17] animate-pulse" />
-          </p>
-        )}
+          return (
+            <div key={msg.id}>
+              {isCalibrationPill ? (
+                <div className="flex justify-center py-0.5">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#ECEAE2]/80 border border-black/[0.06] text-[11px] font-medium text-[#5A626A] text-center">
+                    {msg.text?.replace(/^Calibrated\s*·\s*/i, '')}
+                  </span>
+                </div>
+              ) : msg.role === 'user' ? (
+                <div className="flex justify-end">
+                  <div className="max-w-[88%] rounded-[18px] bg-[#ECEAE2] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#14191F]">
+                    {msg.text}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {msg.blocks?.map((block, bIdx) => {
+                    if (block.type === 'text') {
+                      return <div key={bIdx}>{renderRichChatContent(block.content)}</div>;
+                    }
+                    if (block.type === 'bullets') {
+                      return (
+                        <div key={bIdx} className="space-y-2.5 text-[13.5px] leading-[1.6] text-[#2C333A]">
+                          {block.intro && renderRichChatContent(block.intro)}
+                          <ul className="space-y-1.5 pl-0.5">
+                            {block.items.map((it, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="mt-[8px] w-1.5 h-1.5 rounded-full bg-[#C85A17] shrink-0" />
+                                <span className="flex-1">{renderInlineBold(it)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          {block.outro && renderRichChatContent(block.outro)}
+                        </div>
+                      );
+                    }
+                    if (block.type === 'suggestions') {
+                      return (
+                        <div key={bIdx} className="space-y-1.5 pt-1">
+                          {block.items.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => onSend(suggestion)}
+                              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-white hover:border-[#0E2034] border border-black/[0.08] text-left text-[12.5px] font-medium text-[#14191F] transition-all cursor-pointer group"
+                            >
+                              <span className="truncate pr-2">{suggestion}</span>
+                              <ArrowRight className="w-3.5 h-3.5 text-[#7B828A] group-hover:translate-x-0.5 transition-transform shrink-0" />
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {streamingText && renderRichChatContent(streamingText, { trailingCursor: true })}
 
         {thinkingLabel && (
           <div className="text-[13px] font-medium thinking-shimmer">{thinkingLabel}</div>

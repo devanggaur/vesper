@@ -22,13 +22,19 @@ export const config = {
   viatorApiBaseUrl: process.env.VIATOR_API_BASE_URL || 'https://api.viator.com/partner',
   /** Live Google Flights & Google Hotels real-time pricing + direct booking links */
   serpApiKey: process.env.SERPAPI_API_KEY || '',
-  /** Fast, low-cost model fallback chain so transient 503 demand spikes fail over quickly */
+  /** Fast, low-cost model chain for structured JSON parsing & spatial auto-routing */
   geminiModels: [
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
     'gemini-3.5-flash',
-    'gemini-4-argon',
-    'gemini-4-hydrogen',
+    'gemini-2.5-flash',
+  ] as const,
+  /** Richer conversational & editorial model chain for live Co-Pilot chat and Discover curation */
+  geminiChatModels: [
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.1-pro-preview',
+    'gemini-2.5-flash',
   ] as const,
   /** Per-attempt timeout (ms) before failing over to next model */
   geminiTimeoutMs: 14000,
