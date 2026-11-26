@@ -404,6 +404,7 @@ export const travelApi = {
         assistantMessage: ChatMessage;
         action?: CoPilotAction;
         recommendedPlaces?: PlaceItem[];
+        recommendedHotels?: HotelItem[];
       }) => void;
     }
   ): Promise<void> {

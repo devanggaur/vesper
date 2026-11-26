@@ -765,12 +765,22 @@ export interface RecommendedPlaceSpec {
   bestTime?: string;
 }
 
+export interface RecommendedHotelSpec {
+  query: string;
+  neighborhood?: string;
+  note?: string;
+  pickLabel?: string;
+  noiseAndRoomTip?: string;
+}
+
 export interface StreamCoPilotMetadata {
   suggestions: string[];
   action: CoPilotResponse['action'];
   mutations: ItineraryMutation[];
   placesTitle?: string;
   recommendedPlaces: RecommendedPlaceSpec[];
+  hotelsTitle?: string;
+  recommendedHotels: RecommendedHotelSpec[];
 }
 
 const META_OPEN = '<<<VESPER_META';
@@ -839,10 +849,18 @@ VOICE & WARMTH (MOST IMPORTANT):
 - Use **bold** for specific venue/hotel/neighborhood names and *italics* lightly for nuance or atmosphere. Never use raw headings (#) or walls of text.
 
 INTERACTIVE PLACE CARDS (CRITICAL):
-- Whenever the user asks about restaurants, cafes, coffee shops, bakeries, bars, food spots, viewpoints, museums, galleries, shops, parks, beaches, or ANY visitable place(s) that could be inspected or added to their itinerary, ALWAYS return 2 to 5 real, specific venue names in "recommendedPlaces" (plus a crisp 2–5 word "placesTitle" like "Coffee & Pastries in Chiado" or "Sunset Drinks & Dinner").
+- Whenever the user asks about restaurants, cafes, coffee shops, bakeries, bars, food spots, viewpoints, museums, galleries, shops, parks, beaches, or ANY visitable daytime/evening spot that could be added to their daily itinerary, ALWAYS return 2 to 5 real, specific venue names in "recommendedPlaces" (plus a crisp 2–5 word "placesTitle" like "Coffee & Pastries in Chiado" or "Sunset Drinks & Dinner").
 - Because Vesper automatically verifies each venue via Google Places and renders interactive photo cards (real photos, star ratings, 1-click "+ Add to Trip", dossier view, and live map pins) directly beneath your message:
   - Keep your streamed prose warm, evocative, and concise: a 2–3 sentence opener capturing the vibe & timing (mentioning 1–2 standout details), followed by one short conversational question. Do NOT duplicate long bullet-by-bullet descriptions for places that will appear as interactive cards right below!
-- Only leave "recommendedPlaces" empty for pure logistics/general advice (e.g., transit, packing, weather), itinerary edits, or hotel/flight search requests (for stays or flights, use "action":"open_bookings_stays" or "open_bookings_flights" instead).
+
+INTERACTIVE HOTEL CARDS (CRITICAL — NEVER PUT HOTELS IN recommendedPlaces):
+- Whenever the user asks for hotels, boutique stays, resorts, hostels, places to stay, or where to stay during the trip:
+  - NEVER put hotels or accommodations in "recommendedPlaces" (places are strictly for restaurants, cafes, bars, museums, and attractions!).
+  - ALWAYS return 2 to 5 real, specific hotels in "recommendedHotels" (plus a crisp 2–5 word "hotelsTitle" like "Boutique Hotels in Chiado" or "Top Stays in Lisbon"), each with a concise "note" on why it fits their trip, a "pickLabel", and a "noiseAndRoomTip".
+  - Because Vesper renders proper interactive hotel cards (with nightly & total trip rates for their dates, star class, guest score, neighborhood, "View rooms" + "View more", and live price pins on the map) right beneath your reply, keep your streamed prose warm and concise (2–3 sentences on neighborhoods/vibe + 1 short closing question).
+  - Leave "action":"none" when returning "recommendedHotels" unless the user explicitly asks to open the full Bookings Studio or filter all hotels (then use "action":"open_bookings_stays"). For flight searches, use "action":"open_bookings_flights".
+
+- Only leave both "recommendedPlaces" and "recommendedHotels" empty for pure logistics/general advice (e.g., transit, packing, weather) or quick itinerary edits.
 
 ITINERARY MUTATIONS:
 If the user explicitly asks to ADD a place/restaurant/attraction, REMOVE a stop, MOVE/RESCHEDULE a stop, or SWAP a stop on their itinerary, confirm the change naturally in your reply AND include the exact mutation(s) inside the trailing metadata block.
@@ -851,14 +869,17 @@ Valid day keys for this trip: ${validDays} (or "Any time" if unspecified).
 
 ALWAYS end your response with a single trailing metadata block in this EXACT format (no markdown code fences around it):
 ${META_OPEN}
-{"suggestions":["short follow-up 1","short follow-up 2"],"action":"none","mutations":[],"placesTitle":"","recommendedPlaces":[]}
+{"suggestions":["short follow-up 1","short follow-up 2"],"action":"none","mutations":[],"placesTitle":"","recommendedPlaces":[],"hotelsTitle":"","recommendedHotels":[]}
 ${META_CLOSE}
 
 Where:
 - "action" is one of: "none", "organize", "open_bookings_stays", "open_bookings_flights", "open_map", "switch_discover", "switch_timeline"
 - "placesTitle" is a short editorial heading (e.g., "Coffee Spots in Chiado") when "recommendedPlaces" is non-empty.
-- "recommendedPlaces" is an array of 0 to 5 real visitable spots to render as interactive photo cards:
+- "recommendedPlaces" is an array of 0 to 5 real visitable spots (NEVER hotels/lodging) to render as interactive photo cards:
   - {"query":"Exact real venue name (and neighborhood if helpful)","note":"One vivid sentence on why to go or what to order.","category":"food|cafe|bar|museum|viewpoint|landmark|shop","suggestedDay":"Exact valid day key","bestTime":"9:30 AM"}
+- "hotelsTitle" is a short editorial heading (e.g., "Boutique Stays in Lisbon") when "recommendedHotels" is non-empty.
+- "recommendedHotels" is an array of 0 to 5 real hotels/stays to render as interactive hotel cards with nightly & total pricing:
+  - {"query":"Exact real hotel name","neighborhood":"Chiado","note":"One vivid sentence on why stay here.","pickLabel":"Best overall|Design favorite|Quiet sanctuary|Great value","noiseAndRoomTip":"Request an upper courtyard room for quiet nights."}
 - "mutations" is an array of zero or more objects:
   - {"op":"add_place","query":"Exact real place name","day":"Exact valid day key","time":"10:30 AM"}
   - {"op":"remove_item","titleQuery":"Part of existing stop title"}
@@ -869,16 +890,16 @@ Where:
 
   let lastError: unknown;
 
-  for (const model of config.geminiChatModels) {
-    if (
-      isModelCoolingDown(model) &&
-      model !== config.geminiChatModels[config.geminiChatModels.length - 1]
-    ) {
+  for (let i = 0; i < config.geminiChatModels.length; i++) {
+    const model = config.geminiChatModels[i];
+    const isLastModel = i === config.geminiChatModels.length - 1;
+    if (isModelCoolingDown(model) && !isLastModel) {
       continue;
     }
     let rawAccumulated = '';
     let emittedLen = 0;
     let enteredMeta = false;
+    const connectTimeoutMs = isLastModel ? 14000 : 6500;
 
     try {
       const stream = await withTimeout(
@@ -889,7 +910,7 @@ Where:
           stream: true,
           store: false,
         }),
-        config.geminiTimeoutMs,
+        connectTimeoutMs,
         `gemini-stream:${model}`
       );
 
@@ -928,6 +949,8 @@ Where:
         mutations: [],
         placesTitle: undefined,
         recommendedPlaces: [],
+        hotelsTitle: undefined,
+        recommendedHotels: [],
       };
 
       const metaStart = rawAccumulated.indexOf(META_OPEN);
@@ -951,6 +974,8 @@ Where:
             mutations?: ItineraryMutation[];
             placesTitle?: string;
             recommendedPlaces?: RecommendedPlaceSpec[];
+            hotelsTitle?: string;
+            recommendedHotels?: RecommendedHotelSpec[];
           };
           let action: CoPilotResponse['action'] = { type: 'none' };
           if (parsed.action === 'organize') action = { type: 'organize' };
@@ -969,6 +994,15 @@ Where:
                 .slice(0, 5)
             : [];
 
+          const cleanHotels = Array.isArray(parsed.recommendedHotels)
+            ? parsed.recommendedHotels
+                .filter(
+                  (h): h is RecommendedHotelSpec =>
+                    Boolean(h && typeof h.query === 'string' && h.query.trim().length > 1)
+                )
+                .slice(0, 5)
+            : [];
+
           parsedMeta = {
             suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.slice(0, 3) : [],
             action,
@@ -978,6 +1012,11 @@ Where:
                 ? parsed.placesTitle.trim()
                 : undefined,
             recommendedPlaces: cleanRecommended,
+            hotelsTitle:
+              typeof parsed.hotelsTitle === 'string' && parsed.hotelsTitle.trim()
+                ? parsed.hotelsTitle.trim()
+                : undefined,
+            recommendedHotels: cleanHotels,
           };
         } catch (parseErr) {
           console.warn('[gemini-stream] metadata JSON parse skipped:', (parseErr as Error)?.message);

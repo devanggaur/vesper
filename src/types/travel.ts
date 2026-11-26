@@ -209,6 +209,13 @@ export type ChatBlock =
   | { type: 'text'; content: string }
   | { type: 'bullets'; intro?: string; items: string[]; outro?: string }
   | { type: 'places'; title?: string; places: PlaceItem[] }
+  | {
+      type: 'hotels';
+      title?: string;
+      hotels: HotelItem[];
+      datesLabel?: string;
+      nights?: number;
+    }
   | { type: 'suggestions'; items: string[] };
 
 export interface ChatMessage {

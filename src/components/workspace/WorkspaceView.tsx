@@ -1020,7 +1020,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               }
               if (toast) onNotify(toast);
             },
-            onDone: ({ assistantMessage, action, recommendedPlaces }) => {
+            onDone: ({ assistantMessage, action, recommendedPlaces, recommendedHotels }) => {
               finished = true;
               setThinkingLabel(null);
               setStatusStep(null);
@@ -1029,6 +1029,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 setPlaces((prev) => {
                   const existing = new Set(prev.map((p) => p.id));
                   const fresh = recommendedPlaces.filter((p) => !existing.has(p.id));
+                  return fresh.length > 0 ? [...prev, ...fresh] : prev;
+                });
+              }
+              if (recommendedHotels && recommendedHotels.length > 0) {
+                setHotels((prev) => {
+                  const existing = new Set(prev.map((h) => h.id));
+                  const fresh = recommendedHotels.filter((h) => !existing.has(h.id));
                   return fresh.length > 0 ? [...prev, ...fresh] : prev;
                 });
               }

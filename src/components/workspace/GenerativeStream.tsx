@@ -35,7 +35,7 @@ import {
 import { BrandMark } from '../common/BrandMark';
 import { TasteCard, TasteProfile } from './TasteCard';
 import { MobileChatCalibration } from './MobileChatCalibration';
-import { ActivityCarousel, PlaceCarousel } from './DiscoverCarousels';
+import { ActivityCarousel, ChatHotelCarousel, PlaceCarousel } from './DiscoverCarousels';
 import { CanvasBookings } from './CanvasBookings';
 import { EditorialSheetTarget } from './ContextualEditorialSheet';
 import { renderInlineBold, renderRichChatContent } from '../../utils/format';
@@ -277,6 +277,24 @@ export const GenerativeStream: React.FC<GenerativeStreamProps> = ({
                   ))}
                 </ul>
                 {block.outro && renderRichChatContent(block.outro)}
+              </div>
+            );
+          }
+          if (block.type === 'hotels' && block.hotels.length > 0) {
+            return (
+              <div key={bIdx} className="pt-1.5 pb-0.5">
+                <ChatHotelCarousel
+                  title={block.title}
+                  datesLabel={block.datesLabel || datesLabel}
+                  nights={block.nights}
+                  destination={destination}
+                  hotels={block.hotels}
+                  likedIds={likedIds}
+                  onToggleLike={onToggleLike}
+                  onOpenHotel={onOpenHotel}
+                  onHoverId={onHoverId}
+                  onOpenAllStays={() => jumpToWidget('stays')}
+                />
               </div>
             );
           }

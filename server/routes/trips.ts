@@ -19,6 +19,7 @@ import {
   searchPlacesCached,
   verifyNamedPlaceCached,
 } from '../services/places';
+import { parseTripIsoDates, searchSerpApiHotels } from '../services/serpapi';
 import type {
   ActivityItem,
   ChatMessage,
@@ -1158,17 +1159,46 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
         }
       }
 
+      // Guardrails: never let a hotel or accommodation slip into `recommendedPlaces` as a "Walk-in / Free" place card
+      const HOTEL_TYPE_RE =
+        /\b(hotel|lodging|resort|hostel|inn|motel|bed[ _]and[ _]breakfast|guest[ _]house|pousada|boutique stay|extended stay)\b/i;
+      const USER_HOTEL_INTENT_RE =
+        /\b(hotel|hotels|stay|stays|where to stay|accommodation|accommodations|resort|resorts|boutique stay|lodging|hostel|airbnb)\b/i;
+      const userAskedForHotels = USER_HOTEL_INTENT_RE.test(body.message);
+
+      const hotelSpecs: Array<{
+        query: string;
+        neighborhood?: string;
+        note?: string;
+        pickLabel?: string;
+        noiseAndRoomTip?: string;
+      }> = [...(meta.recommendedHotels || [])];
+      const placeSpecs: typeof meta.recommendedPlaces = [];
+
+      for (const spec of meta.recommendedPlaces || []) {
+        const looksLikeHotel =
+          HOTEL_TYPE_RE.test(`${spec.category || ''} ${spec.query}`) ||
+          (userAskedForHotels && hotelSpecs.length === 0);
+        if (looksLikeHotel) {
+          hotelSpecs.push({ query: spec.query, note: spec.note });
+        } else {
+          placeSpecs.push(spec);
+        }
+      }
+
       // Verify any AI-recommended places in parallel via Google Places API so chat renders
       // rich interactive photo cards (+ Add, ratings, dossiers, and live map pins)
       const recommendedPlaces: PlaceItem[] = [];
-      if (meta.recommendedPlaces && meta.recommendedPlaces.length > 0) {
+      const divertedHotelHits: Array<{ gp: GooglePlaceLite; note?: string }> = [];
+
+      if (placeSpecs.length > 0) {
         await stream.writeSSE({
           event: 'status',
           data: JSON.stringify({ label: 'Pulling live photos, ratings & map pins...' }),
         });
 
         const verified = await Promise.all(
-          meta.recommendedPlaces.slice(0, 5).map(async (spec, idx) => {
+          placeSpecs.slice(0, 5).map(async (spec, idx) => {
             const hits = await searchPlacesCached(
               `${spec.query} ${trip.destination}`,
               1,
@@ -1176,6 +1206,11 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
             );
             const gp = hits[0];
             if (!gp) return null;
+            // Secondary guardrail: if Google Places classifies this venue as lodging/hotel, divert to Hotel Cards!
+            if (HOTEL_TYPE_RE.test(gp.primaryType)) {
+              divertedHotelHits.push({ gp, note: spec.note });
+              return null;
+            }
             const catText = `${spec.category || ''} ${gp.primaryType}`;
             const section: PlaceItem['section'] = /food|cafe|café|coffee|bar|bakery|restaurant|dining|pastry|bistro|tapas|wine/i.test(
               catText
@@ -1228,7 +1263,164 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
         }
       }
 
+      // Hydrate interactive Hotel Cards (live SerpApi Google Hotels pricing + Google Places details)
+      const recommendedHotels: HotelItem[] = [];
+      let stayNights = Math.max(1, (trip.day_labels?.length || 3) - 1);
+      const shouldHydrateHotels =
+        hotelSpecs.length > 0 ||
+        divertedHotelHits.length > 0 ||
+        (userAskedForHotels && meta.action.type !== 'open_bookings_flights');
+
+      if (shouldHydrateHotels) {
+        await stream.writeSSE({
+          event: 'status',
+          data: JSON.stringify({ label: 'Checking live hotel rates & room options...' }),
+        });
+
+        const { startDate, endDate, nights } = parseTripIsoDates(trip.dates_label);
+        stayNights = Math.max(1, nights || stayNights);
+        const adultsMatch = (trip.travelers || '').match(/\d+/);
+        const adults = adultsMatch ? Math.min(8, Math.max(1, parseInt(adultsMatch[0], 10))) : 2;
+
+        const [liveSerp, verifiedNamedHotels] = await Promise.all([
+          searchSerpApiHotels({
+            destination: trip.destination,
+            checkInDate: startDate,
+            checkOutDate: endDate,
+            nights: stayNights,
+            adults,
+          }).catch(() => null),
+          Promise.all(
+            hotelSpecs.slice(0, 5).map(async (spec) => {
+              const hits = await searchPlacesCached(
+                `${spec.query} ${trip.destination}`,
+                1,
+                trip.destination
+              );
+              return { spec, gp: hits[0] ?? null };
+            })
+          ),
+        ]);
+
+        const livePool = liveSerp?.hotels || [];
+        const normalizeHotelName = (s: string) =>
+          s
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .replace(/\b(hotel|lisboa|lisbon|boutique|the|by|suites|resort|spa)\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const matchLiveHotel = (name: string): HotelItem | undefined => {
+          const target = normalizeHotelName(name);
+          if (!target) return undefined;
+          return livePool.find((h) => {
+            const cand = normalizeHotelName(h.name);
+            return cand && (cand.includes(target) || target.includes(cand));
+          });
+        };
+
+        const scaleHotelToNights = (base: HotelItem): HotelItem => {
+          if (base.livePricing) return base;
+          const nightly = base.pricePerNight || Math.round(base.priceTotal / 2);
+          const total = Math.round(nightly * stayNights);
+          return {
+            ...base,
+            pricePerNight: nightly,
+            priceTotal: total,
+            rooms: base.rooms.map((r) => ({
+              ...r,
+              rates: r.rates.map((rate) => {
+                const ratio = base.priceTotal > 0 ? rate.price / base.priceTotal : 1;
+                return { ...rate, price: Math.round((total * ratio) / 5) * 5 };
+              }),
+            })),
+          };
+        };
+
+        const seenHotelIds = new Set<string>();
+        const pushHotel = (h: HotelItem) => {
+          if (!seenHotelIds.has(h.id)) {
+            seenHotelIds.add(h.id);
+            recommendedHotels.push(h);
+          }
+        };
+
+        verifiedNamedHotels.forEach(({ spec, gp }, idx) => {
+          const matchedLive =
+            matchLiveHotel(spec.query) || (gp ? matchLiveHotel(gp.name) : undefined);
+          if (matchedLive) {
+            pushHotel({
+              ...matchedLive,
+              ...(spec.note ? { shortDescription: spec.note, whyChoose: spec.note } : {}),
+              ...(spec.pickLabel ? { pickLabel: spec.pickLabel } : {}),
+            });
+          } else if (gp) {
+            const curated: CuratedHotelPick = {
+              name: gp.name,
+              neighborhood: spec.neighborhood || gp.neighborhood,
+              pickLabel: spec.pickLabel || 'Boutique pick',
+              whyChoose:
+                spec.note ||
+                gp.editorialSummary ||
+                `Well-reviewed stay in ${gp.neighborhood}, ${trip.destination}.`,
+              noiseAndRoomTip:
+                spec.noiseAndRoomTip || 'Request a quiet upper-floor or courtyard-facing room.',
+            };
+            pushHotel(scaleHotelToNights(toHotelItem(gp, trip.destination, idx, curated)));
+          }
+        });
+
+        divertedHotelHits.forEach(({ gp, note }, idx) => {
+          const matchedLive = matchLiveHotel(gp.name);
+          if (matchedLive) {
+            pushHotel({
+              ...matchedLive,
+              ...(note ? { shortDescription: note, whyChoose: note } : {}),
+            });
+          } else {
+            pushHotel(
+              scaleHotelToNights(
+                toHotelItem(gp, trip.destination, idx, {
+                  name: gp.name,
+                  neighborhood: gp.neighborhood,
+                  pickLabel: 'Curated stay',
+                  whyChoose: note || gp.editorialSummary || `Top-rated stay in ${gp.neighborhood}.`,
+                  noiseAndRoomTip: 'Ask for an upper-floor room for quiet nights.',
+                })
+              )
+            );
+          }
+        });
+
+        // If user asked generally for hotels and no specific named picks resolved, show top 4 live Google Hotels
+        if (recommendedHotels.length === 0 && livePool.length > 0) {
+          for (const h of livePool.slice(0, 4)) pushHotel(h);
+        }
+
+        // Persist newly hydrated chat hotels into the trip's catalog so View Rooms & Map Pins survive reload
+        if (recommendedHotels.length > 0 && trip.catalog) {
+          const cat = trip.catalog as { hotels?: HotelItem[] };
+          const existingIds = new Set((cat.hotels || []).map((h) => h.id));
+          const freshHotels = recommendedHotels.filter((h) => !existingIds.has(h.id));
+          if (freshHotels.length > 0) {
+            await store.updateTrip(trip.id, {
+              catalog: { ...trip.catalog, hotels: [...(cat.hotels || []), ...freshHotels] },
+            });
+          }
+        }
+      }
+
       const blocks: ChatMessage['blocks'] = [{ type: 'text', content: fullText }];
+      if (recommendedHotels.length > 0) {
+        blocks.push({
+          type: 'hotels',
+          title: meta.hotelsTitle || `Stays in ${trip.destination}`,
+          hotels: recommendedHotels,
+          datesLabel: trip.dates_label,
+          nights: stayNights,
+        });
+      }
       if (recommendedPlaces.length > 0) {
         blocks.push({
           type: 'places',
@@ -1254,6 +1446,7 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
           assistantMessage: assistantMsg,
           action: meta.action,
           recommendedPlaces,
+          recommendedHotels,
         }),
       });
     } catch (err) {

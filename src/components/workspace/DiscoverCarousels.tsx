@@ -942,6 +942,208 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
   );
 };
 
+/* ── Compact Inline Chat Hotel Carousel (for Ask Vesper stay replies) ──── */
+interface ChatHotelCarouselProps {
+  title?: string;
+  datesLabel?: string;
+  nights?: number;
+  destination: string;
+  hotels: HotelItem[];
+  likedIds: Set<string>;
+  onToggleLike: (id: string) => void;
+  onOpenHotel: (hotel: HotelItem, openRooms?: boolean) => void;
+  onHoverId: (id: string | null) => void;
+  onOpenAllStays?: () => void;
+}
+
+export const ChatHotelCarousel: React.FC<ChatHotelCarouselProps> = ({
+  title,
+  datesLabel,
+  nights,
+  destination,
+  hotels,
+  likedIds,
+  onToggleLike,
+  onOpenHotel,
+  onHoverId,
+  onOpenAllStays,
+}) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollBy = (dir: number) => {
+    scrollRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-end justify-between gap-3">
+        <div className="space-y-0.5 min-w-0">
+          {title && (
+            <h3 className="font-editorial text-[18px] font-medium text-[#14191F] tracking-[-0.015em] leading-tight">
+              {title}
+            </h3>
+          )}
+          {datesLabel && (
+            <div className="text-[11.5px] text-[#7B828A]">
+              {datesLabel}
+              {nights ? ` · ${nights} ${nights === 1 ? 'night' : 'nights'}` : ''}
+            </div>
+          )}
+        </div>
+
+        {hotels.length > 2 && (
+          <div className="flex items-center gap-1.5 shrink-0 pb-0.5">
+            <button
+              type="button"
+              onClick={() => scrollBy(-1)}
+              aria-label="Scroll stays left"
+              className="w-7 h-7 rounded-full border border-black/[0.1] bg-white hover:bg-black/[0.03] flex items-center justify-center text-[#4A535C] cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollBy(1)}
+              aria-label="Scroll stays right"
+              className="w-7 h-7 rounded-full border border-black/[0.1] bg-white hover:bg-black/[0.03] flex items-center justify-center text-[#4A535C] cursor-pointer"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="flex gap-3 sm:gap-3.5 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-1 -mx-1 px-1"
+      >
+        {hotels.map((hotel) => {
+          const nightly =
+            hotel.pricePerNight ||
+            (nights && nights > 0 ? Math.round(hotel.priceTotal / nights) : Math.round(hotel.priceTotal / 2));
+
+          return (
+            <div
+              key={hotel.id}
+              onMouseEnter={() => onHoverId(hotel.id)}
+              onMouseLeave={() => onHoverId(null)}
+              className="w-[80vw] max-w-[285px] sm:w-[285px] snap-start shrink-0 rounded-[20px] bg-white border border-black/[0.08] shadow-[0_2px_10px_rgba(14,32,52,0.04)] overflow-hidden flex flex-col justify-between group"
+            >
+              <div>
+                <div
+                  onClick={() => onOpenHotel(hotel, false)}
+                  className="relative h-[168px] overflow-hidden cursor-pointer"
+                >
+                  <SmartImage
+                    src={hotel.image}
+                    alt={hotel.name}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                  <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                    {hotel.livePricing ? (
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-700/90 text-white text-[10.5px] font-semibold backdrop-blur-md shadow-xs">
+                        Live rate
+                      </span>
+                    ) : hotel.pickLabel ? (
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#0E2034]/88 text-white text-[10.5px] font-semibold backdrop-blur-md shadow-xs">
+                        {hotel.pickLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleLike(hotel.id);
+                    }}
+                    aria-label="Favorite stay"
+                    className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-xs flex items-center justify-center text-white cursor-pointer"
+                  >
+                    <Heart
+                      className={`w-4 h-4 ${
+                        likedIds.has(hotel.id) ? 'fill-rose-500 text-rose-500' : 'text-white'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="p-3.5 space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div
+                        onClick={() => onOpenHotel(hotel, false)}
+                        className="text-[14px] font-semibold text-[#14191F] truncate cursor-pointer hover:underline"
+                      >
+                        {hotel.name}
+                      </div>
+                      <div className="text-[11.5px] text-[#7B828A] truncate">
+                        {hotel.neighborhood} · {hotel.stars}-star hotel
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 leading-tight">
+                      <div className="font-tabular text-[14.5px] font-semibold text-[#14191F]">
+                        ${hotel.priceTotal.toLocaleString()}
+                      </div>
+                      <div className="font-tabular text-[10.5px] text-[#7B828A]">
+                        ${nightly}/night
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-[11.5px] text-[#5A626A] flex-wrap">
+                    <span className="px-1.5 py-0.2 rounded-full bg-[#B68E35]/15 text-[#8E6C1E] font-bold text-[11px]">
+                      {hotel.rating.toFixed(1)}
+                    </span>
+                    <span>{hotel.reviews.toLocaleString()} reviews</span>
+                    {hotel.freeCancellation && (
+                      <span className="text-[10.5px] font-semibold text-emerald-700">
+                        · Free cancel
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[12px] text-[#5A626A] line-clamp-2 leading-relaxed pt-0.5">
+                    {hotel.shortDescription}
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-3.5 pb-3.5 pt-1 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenHotel(hotel, true)}
+                  className="py-2 px-3 rounded-full border border-black/[0.1] hover:border-[#0E2034] bg-[#FAF9F5] hover:bg-white text-[12px] font-medium text-[#14191F] transition-all cursor-pointer"
+                >
+                  View rooms
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenHotel(hotel, false)}
+                  className="py-2 px-3 rounded-full border border-black/[0.1] hover:border-[#0E2034] bg-[#FAF9F5] hover:bg-white text-[12px] font-medium text-[#14191F] flex items-center justify-center gap-1 transition-all cursor-pointer"
+                >
+                  <span>View more</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {onOpenAllStays && (
+        <button
+          type="button"
+          onClick={onOpenAllStays}
+          className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#C85A17] hover:underline cursor-pointer pt-0.5"
+        >
+          <span>Compare &amp; filter all stays in {destination}</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </div>
+  );
+};
+
 /* ── AI Comparison Table for Curated Top Hotels ───────────────────────── */
 interface HotelComparisonTableProps {
   intro: string;
