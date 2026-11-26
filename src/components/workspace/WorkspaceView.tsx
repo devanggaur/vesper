@@ -851,6 +851,85 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
   };
 
+  const handleToggleSaveActivity = (activity: ActivityItem) => {
+    if (savedRefIds.has(activity.id)) {
+      const next = savedItems.filter((i) => i.refId !== activity.id);
+      setSavedItems(next);
+      persistItems(next);
+      onNotify(`Removed ${activity.title}`);
+      return;
+    }
+    const bt = inferActivityBookingType(activity);
+    const guestMatch = (tasteProfile?.travelers || travelersLabel || '').match(/\d+/);
+    const guests = guestMatch
+      ? Math.max(1, parseInt(guestMatch[0], 10))
+      : /solo|just me/i.test(tasteProfile?.travelers || travelersLabel || '')
+      ? 1
+      : 2;
+    const total = activity.pricePerPerson * guests;
+
+    const next: TripSavedItem[] = [
+      ...savedItems,
+      {
+        id: `saved-${activity.id}`,
+        refId: activity.id,
+        type: 'activity',
+        title: activity.title,
+        subtitle: destination,
+        image: activity.image,
+        day: 'Any time',
+        price: total,
+        coords: activity.coords,
+        bookingMeta: {
+          bookingType: bt,
+          status: bt === 'walk_in' ? 'not_needed' : 'needed',
+          advanceLeadTime: activity.advanceLeadTime,
+          officialUrl: activity.website,
+          estimatedCostUsd: activity.pricePerPerson,
+        },
+      },
+    ];
+    setSavedItems(next);
+    persistItems(next);
+    onNotify(`Added ${activity.title} to My Trip`);
+
+    if (!userPinnedMapRef.current) {
+      setRightPanel('trip');
+    } else {
+      setTripBadgePulse(true);
+      window.setTimeout(() => setTripBadgePulse(false), 700);
+    }
+
+    const unscheduledCount = next.filter(
+      (i) => (i.type === 'place' || i.type === 'activity') && (!i.day || i.day === 'Any time')
+    ).length;
+    if (unscheduledCount >= 3 && !hasNudgedOrganizeRef.current) {
+      hasNudgedOrganizeRef.current = true;
+      window.setTimeout(() => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `nudge-org-${Date.now()}`,
+            role: 'assistant',
+            blocks: [
+              {
+                type: 'text',
+                content: `You’ve shortlisted **${unscheduledCount} great spots** in **${destination}**—want me to organize them into a smooth day-by-day route by neighborhood and opening hours?`,
+              },
+              {
+                type: 'suggestions',
+                items: [
+                  `Organize my ${destination} itinerary into days`,
+                  'Keep adding more spots first',
+                ],
+              },
+            ],
+          },
+        ]);
+      }, 420);
+    }
+  };
+
   const handleAddActivity = (
     activity: ActivityItem,
     day: string,
@@ -1518,6 +1597,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               onSubmitTaste={handleTasteSubmit}
               onToggleLike={handleToggleLike}
               onToggleSavePlace={handleToggleSavePlace}
+              onToggleSaveActivity={handleToggleSaveActivity}
               onOpenActivity={(act) => setSheetTarget({ kind: 'activity', item: act })}
               onSelectPlace={(p) => setSheetTarget({ kind: 'place', item: p })}
               onOpenHotel={(h, openRooms = false) =>

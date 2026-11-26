@@ -101,6 +101,7 @@ interface GenerativeStreamProps {
   onSubmitTaste: (profile: TasteProfile) => void;
   onToggleLike: (id: string) => void;
   onToggleSavePlace: (place: PlaceItem) => void;
+  onToggleSaveActivity: (activity: ActivityItem) => void;
   onOpenActivity: (act: ActivityItem) => void;
   onSelectPlace: (place: PlaceItem) => void;
   onOpenHotel: (hotel: HotelItem, openRooms?: boolean) => void;
@@ -165,6 +166,7 @@ export const GenerativeStream: React.FC<GenerativeStreamProps> = ({
   onSubmitTaste,
   onToggleLike,
   onToggleSavePlace,
+  onToggleSaveActivity,
   onOpenActivity,
   onSelectPlace,
   onOpenHotel,
@@ -609,7 +611,9 @@ export const GenerativeStream: React.FC<GenerativeStreamProps> = ({
                     <ActivityCarousel
                       title={activitiesTitle}
                       activities={activities.slice(0, 5)}
+                      savedRefIds={savedRefIds}
                       likedIds={likedIds}
+                      onToggleSave={onToggleSaveActivity}
                       onToggleLike={onToggleLike}
                       onOpenActivity={onOpenActivity}
                       onHoverId={onHoverId}

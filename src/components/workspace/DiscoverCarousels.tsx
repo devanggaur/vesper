@@ -36,7 +36,10 @@ import {
 interface ActivityCarouselProps {
   title: string;
   activities: ActivityItem[];
+  savedRefIds?: Set<string>;
   likedIds: Set<string>;
+  readOnly?: boolean;
+  onToggleSave?: (activity: ActivityItem) => void;
   onToggleLike: (id: string) => void;
   onOpenActivity: (activity: ActivityItem) => void;
   onHoverId: (id: string | null) => void;
@@ -45,7 +48,10 @@ interface ActivityCarouselProps {
 export const ActivityCarousel: React.FC<ActivityCarouselProps> = ({
   title,
   activities,
+  savedRefIds,
   likedIds,
+  readOnly = false,
+  onToggleSave,
   onToggleLike,
   onOpenActivity,
   onHoverId,
@@ -81,6 +87,7 @@ export const ActivityCarousel: React.FC<ActivityCarouselProps> = ({
         className="flex gap-3 sm:gap-3.5 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-1 -mx-1 px-1"
       >
         {activities.map((act) => {
+          const isSaved = Boolean(savedRefIds?.has(act.id));
           const actBookingType = inferActivityBookingType(act);
           const actBadge = getBookingTypeMeta(actBookingType);
           return (
@@ -109,20 +116,43 @@ export const ActivityCarousel: React.FC<ActivityCarouselProps> = ({
                 >
                   {actBadge.shortLabel}
                 </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleLike(act.id);
-                  }}
-                  className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-xs flex items-center justify-center text-white transition-colors cursor-pointer"
-                >
-                  <Heart
-                    className={`w-4 h-4 ${
-                      likedIds.has(act.id) ? 'fill-rose-500 text-rose-500' : 'text-white'
-                    }`}
-                  />
-                </button>
+                <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                  {!readOnly && onToggleSave && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSave(act);
+                      }}
+                      title={isSaved ? 'Added to trip' : 'Add to trip'}
+                      className={`w-8 h-8 rounded-full backdrop-blur-xs flex items-center justify-center transition-all cursor-pointer ${
+                        isSaved
+                          ? 'bg-[#0E2034] text-white shadow-md'
+                          : 'bg-black/40 hover:bg-[#0E2034] text-white'
+                      }`}
+                    >
+                      {isSaved ? (
+                        <Check className="w-4 h-4" strokeWidth={2.4} />
+                      ) : (
+                        <Plus className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleLike(act.id);
+                    }}
+                    className="w-8 h-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-xs flex items-center justify-center text-white transition-colors cursor-pointer"
+                  >
+                    <Heart
+                      className={`w-4 h-4 ${
+                        likedIds.has(act.id) ? 'fill-rose-500 text-rose-500' : 'text-white'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
 
               <div className="p-3.5 space-y-1.5">
