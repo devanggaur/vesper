@@ -71,6 +71,7 @@ const indexHtmlPath = path.join(distDir, 'index.html');
 
 if (fs.existsSync(indexHtmlPath)) {
   app.use('/assets/*', serveStatic({ root: './dist' }));
+  app.use('/favicon.svg', serveStatic({ root: './dist' }));
   app.use('/favicon.ico', serveStatic({ root: './dist' }));
 
   app.get('*', (c) => {

@@ -2,15 +2,12 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, MapPin, Calendar, Sparkles, LogOut, User, Award } from 'lucide-react';
 import { BrandMark } from './BrandMark';
-import { ThemeSwitcher, VesperTheme } from './ThemeSwitcher';
 import { TripSummary } from '../../types/travel';
 
 interface TripSidebarProps {
   isOpen: boolean;
-  theme: VesperTheme;
   userProfile?: { email: string; name?: string; avatarUrl?: string } | null;
   loyaltyCount?: number;
-  onChangeTheme: (t: VesperTheme) => void;
   onClose: () => void;
   currentTripTitle: string;
   recentTrips: TripSummary[];
@@ -28,10 +25,8 @@ interface TripSidebarProps {
  */
 export const TripSidebar: React.FC<TripSidebarProps> = ({
   isOpen,
-  theme,
   userProfile,
   loyaltyCount = 0,
-  onChangeTheme,
   onClose,
   currentTripTitle,
   recentTrips,
@@ -183,13 +178,6 @@ export const TripSidebar: React.FC<TripSidebarProps> = ({
                   {loyaltyCount > 0 ? `${loyaltyCount} saved` : 'Add'}
                 </span>
               </button>
-
-              <div className="space-y-1.5">
-                <div className="text-[10.5px] font-semibold uppercase tracking-wider text-[#8A9097] px-1">
-                  Atmosphere
-                </div>
-                <ThemeSwitcher theme={theme} onChange={onChangeTheme} />
-              </div>
 
               {userProfile ? (
                 <div className="flex items-center justify-between gap-2 px-1 pt-1">

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Plus, Minus, AlertCircle, Loader2 } from 'lucide-react';
 import { Coordinates, HotelItem, PlaceItem, TripDayMeta, TripSavedItem } from '../../types/travel';
-import { VesperTheme } from '../common/ThemeSwitcher';
 import { buildCurvedArcPoints } from '../../utils/geo';
 import { parseStartTimeMinutes } from '../../utils/time';
 import { loadGoogleMaps } from '../../utils/googleMapsLoader';
@@ -10,7 +9,6 @@ import { DEFAULT_CDMX_DAYS } from '../../services/travelApi';
 
 interface InteractiveMapProps {
   mapStage: 'continent' | 'city' | 'pins';
-  theme: VesperTheme;
   center?: Coordinates;
   days?: TripDayMeta[];
   places: PlaceItem[];
@@ -22,8 +20,6 @@ interface InteractiveMapProps {
   onSelectPlace: (place: PlaceItem) => void;
   onSelectHotel: (hotel: HotelItem) => void;
 }
-
-const DARK_ROUTE_PALETTE = ['#E5C585', '#60A5FA', '#34D399', '#C084FC', '#FBBF24'];
 
 /**
  * Lightweight Google Maps OverlayView rendering rich interactive HTML pins
@@ -85,7 +81,6 @@ function createHtmlOverlay(
  */
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   mapStage,
-  theme,
   center = { lat: 19.426, lng: -99.172 },
   days = DEFAULT_CDMX_DAYS,
   places,
@@ -135,7 +130,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         const map = new g.maps.Map(containerRef.current, {
           center: { lat: center.lat, lng: center.lng },
           zoom: mapStage === 'pins' ? 13 : 12,
-          styles: getGoogleMapStyles(theme),
+          styles: getGoogleMapStyles(),
           disableDefaultUI: true,
           clickableIcons: false,
           gestureHandling: 'greedy',
@@ -163,13 +158,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2. Apply custom Twilight / Nocturne / Olive Google Maps styling reactively
-  useEffect(() => {
-    if (!mapRef.current || !isReady) return;
-    mapRef.current.setOptions({ styles: getGoogleMapStyles(theme) });
-  }, [theme, isReady]);
-
-  // 3. Recenter smoothly when destination coordinates change
+  // 2. Recenter smoothly when destination coordinates change
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isReady) return;
@@ -196,17 +185,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const stopOrderBadge = new Map<string, { num: number; color: string }>();
 
     // Curved quadratic Bezier route arcs for each day
-    days.forEach((meta, dayIdx) => {
+    days.forEach((meta) => {
       if (dayFilter !== 'All' && dayFilter !== meta.key) return;
 
       const dayStops = savedItems
         .filter((i) => (i.type === 'place' || i.type === 'activity') && i.day === meta.key && i.coords)
         .sort((a, b) => parseStartTimeMinutes(a.time) - parseStartTimeMinutes(b.time));
 
-      const lineColor =
-        theme === 'nocturne'
-          ? DARK_ROUTE_PALETTE[dayIdx % DARK_ROUTE_PALETTE.length]
-          : meta.dotColor;
+      const lineColor = meta.dotColor;
 
       dayStops.forEach((st, idx) => {
         stopOrderBadge.set(st.refId, { num: idx + 1, color: lineColor });
@@ -222,7 +208,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           path: pts,
           geodesic: false,
           strokeColor: lineColor,
-          strokeOpacity: theme === 'nocturne' ? 0.24 : 0.16,
+          strokeOpacity: 0.16,
           strokeWeight: 7,
           map,
         });
@@ -347,7 +333,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   }, [
     isReady,
-    theme,
     days,
     places,
     hotels,
@@ -417,11 +402,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           >
             All days
           </button>
-          {days.map((m, idx) => {
-            const dot =
-              theme === 'nocturne'
-                ? DARK_ROUTE_PALETTE[idx % DARK_ROUTE_PALETTE.length]
-                : m.dotColor;
+          {days.map((m) => {
+            const dot = m.dotColor;
             const active = dayFilter === m.key;
             return (
               <button

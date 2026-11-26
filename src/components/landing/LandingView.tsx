@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { SmartImage } from '../common/SmartImage';
-import { ThemeSwitcher, VesperTheme } from '../common/ThemeSwitcher';
 import {
   DateRangePicker,
   getDefaultTripDateSelection,
@@ -37,9 +36,7 @@ import {
 } from '../../data/landingDestinations';
 
 interface LandingViewProps {
-  theme: VesperTheme;
   userProfile?: { email: string; name?: string; avatarUrl?: string } | null;
-  onChangeTheme: (t: VesperTheme) => void;
   onStartTrip: (
     prompt: string,
     focusMode?: 'flights' | 'stays' | 'activities',
@@ -59,9 +56,7 @@ interface LandingViewProps {
  * - Slow-drifting dual-row editorial postcard horizon that pauses on hover and filters by mood.
  */
 export const LandingView: React.FC<LandingViewProps> = ({
-  theme,
   userProfile,
-  onChangeTheme,
   onStartTrip,
   onOpenSidebar,
   onOpenAuth,
@@ -188,7 +183,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-2.5">
-          <ThemeSwitcher theme={theme} onChange={onChangeTheme} compact />
           <button
             type="button"
             onClick={userProfile ? onOpenProfile : onOpenAuth}

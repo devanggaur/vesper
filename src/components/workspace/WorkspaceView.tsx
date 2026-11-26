@@ -35,7 +35,6 @@ import {
 import { DEFAULT_CDMX_DAYS, travelApi } from '../../services/travelApi';
 import { inferActivityBookingType, inferPlaceBookingType } from '../../utils/bookingHelpers';
 import { BrandMark } from '../common/BrandMark';
-import { ThemeSwitcher, VesperTheme } from '../common/ThemeSwitcher';
 import { TasteCard, TasteProfile } from './TasteCard';
 import { ActivityCarousel, PlaceCarousel } from './DiscoverCarousels';
 import { CanvasTimeline } from './CanvasTimeline';
@@ -62,8 +61,6 @@ interface WorkspaceViewProps {
   onChangeHomeAirport?: (airport: string) => void;
   onSaveDefaultTaste?: (profile: TasteProfile) => void;
   onOpenLoyaltyWallet?: (category: 'hotel' | 'airline') => void;
-  theme: VesperTheme;
-  onChangeTheme: (t: VesperTheme) => void;
   onOpenSidebar: () => void;
   onGoHome: () => void;
   onTripLoaded?: (meta: { id: string; slug: string; title: string }) => void;
@@ -94,8 +91,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onChangeHomeAirport,
   onSaveDefaultTaste,
   onOpenLoyaltyWallet,
-  theme,
-  onChangeTheme,
   onOpenSidebar,
   onGoHome,
   onTripLoaded,
@@ -1154,7 +1149,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 )}
               </button>
             )}
-            <ThemeSwitcher theme={theme} onChange={onChangeTheme} compact />
             {canEdit && totalCost > 0 && (
               <button
                 onClick={() => setShowBookingModal(true)}
@@ -1219,7 +1213,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             <div className="h-full w-full p-3 sm:p-4 pb-20 lg:pb-4">
               <InteractiveMap
                 mapStage="pins"
-                theme={theme}
                 center={mapCenter}
                 days={days}
                 places={places}

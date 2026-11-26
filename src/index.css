@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ── Theme 1: Twilight Editorial (Default for Vesper) ───────────────────── */
+/* ── Vesper Twilight Editorial Palette ──────────────────────────────────── */
 :root,
 [data-theme="twilight"] {
   --v-font-serif: "Instrument Serif", Georgia, serif;
@@ -31,70 +31,6 @@
   --v-shimmer-base: #8890A0;
   --v-shimmer-peak: #151B2B;
   --v-map-bg: #DCE6EE;
-}
-
-/* ── Theme 2: Nocturne (Moody Dark-Mode Luxury) ─────────────────────────── */
-[data-theme="nocturne"] {
-  --v-font-serif: "Fraunces", Georgia, serif;
-  --v-font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --v-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --v-display-scale: 0.96;
-  --v-display-tracking: -0.025em;
-
-  --v-canvas: #0E1117;
-  --v-canvas-subtle: #1A202C;
-  --v-surface: #151A23;
-  --v-surface-alt: #11151D;
-  --v-ink: #F3EFE6;
-  --v-ink-secondary: #D4CEC2;
-  --v-ink-muted: #9BA3B4;
-  --v-ink-subtle: #737D91;
-  --v-cta: #E5C585;
-  --v-cta-hover: #F2D79E;
-  --v-cta-text: #11151D;
-  --v-accent: #E5C585;
-  --v-badge-bg: rgba(229, 197, 133, 0.16);
-  --v-badge-text: #E5C585;
-  --v-border: rgba(255, 255, 255, 0.09);
-  --v-border-strong: rgba(255, 255, 255, 0.18);
-  --v-hover-tint: rgba(255, 255, 255, 0.06);
-  --v-shadow-card: 0 4px 18px rgba(0, 0, 0, 0.32);
-  --v-shadow-float: 0 14px 44px rgba(0, 0, 0, 0.55);
-  --v-shimmer-base: #6F7888;
-  --v-shimmer-peak: #F3EFE6;
-  --v-map-bg: #11161F;
-}
-
-/* ── Theme 3: Mediterranean Sun (Warm Olive & Terracotta) ───────────────── */
-[data-theme="mediterranean"] {
-  --v-font-serif: "Fraunces", Georgia, serif;
-  --v-font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --v-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --v-display-scale: 0.96;
-  --v-display-tracking: -0.025em;
-
-  --v-canvas: #F6F2EA;
-  --v-canvas-subtle: #EAE3D5;
-  --v-surface: #FFFDF8;
-  --v-surface-alt: #EFE9DD;
-  --v-ink: #1E1A16;
-  --v-ink-secondary: #3E362E;
-  --v-ink-muted: #6C6155;
-  --v-ink-subtle: #928678;
-  --v-cta: #1F3A2E;
-  --v-cta-hover: #2A4D3E;
-  --v-cta-text: #FFFDF8;
-  --v-accent: #B84A27;
-  --v-badge-bg: rgba(184, 74, 39, 0.13);
-  --v-badge-text: #9E3C1D;
-  --v-border: rgba(30, 26, 22, 0.09);
-  --v-border-strong: rgba(30, 26, 22, 0.18);
-  --v-hover-tint: rgba(30, 26, 22, 0.045);
-  --v-shadow-card: 0 2px 12px rgba(30, 26, 22, 0.045);
-  --v-shadow-float: 0 12px 40px rgba(30, 26, 22, 0.085);
-  --v-shimmer-base: #928678;
-  --v-shimmer-peak: #1E1A16;
-  --v-map-bg: #E3E7E2;
 }
 
 @layer base {
@@ -235,45 +171,6 @@
 }
 [data-theme] .hover\:border-\[\#0E2034\]:hover {
   border-color: var(--v-cta) !important;
-}
-
-/* Nocturne-specific fine contrast adjustments */
-[data-theme="nocturne"] .bg-\[\#0E2034\] span.bg-white\/18,
-[data-theme="nocturne"] .bg-\[\#0E2034\] span.bg-white\/20 {
-  background-color: rgba(17, 21, 29, 0.2) !important;
-  color: #11151D !important;
-}
-[data-theme="nocturne"] .bg-\[\#0E2034\] svg {
-  color: #11151D !important;
-}
-[data-theme="nocturne"] .text-\[\#1C3F94\],
-[data-theme="nocturne"] .text-\[\#0B2343\] {
-  color: #93B4F5 !important;
-}
-[data-theme="nocturne"] .bg-black\/15 {
-  background-color: rgba(255, 255, 255, 0.22) !important;
-}
-[data-theme="nocturne"] .bg-black\/25,
-[data-theme="nocturne"] .bg-black\/30 {
-  background-color: rgba(255, 255, 255, 0.35) !important;
-}
-[data-theme="nocturne"] .text-black\/20 {
-  color: rgba(255, 255, 255, 0.28) !important;
-}
-[data-theme="nocturne"] select option {
-  background-color: #151A23;
-  color: #F3EFE6;
-}
-[data-theme="nocturne"] .bg-emerald-100,
-[data-theme="nocturne"] .bg-emerald-100\/80 {
-  background-color: rgba(16, 185, 129, 0.18) !important;
-  color: #6EE7B7 !important;
-}
-[data-theme="nocturne"] .text-emerald-700 {
-  color: #6EE7B7 !important;
-}
-[data-theme="nocturne"] .hover\:text-white:hover {
-  color: var(--v-cta-text) !important;
 }
 
 /* Custom ultra-clean scrollbars */

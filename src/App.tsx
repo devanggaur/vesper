@@ -11,7 +11,6 @@ import { TasteProfile } from './components/workspace/TasteCard';
 import { TripSidebar } from './components/common/TripSidebar';
 import { AuthModal } from './components/common/AuthModal';
 import { ProfileSettingsModal } from './components/common/ProfileSettingsModal';
-import { VesperTheme } from './components/common/ThemeSwitcher';
 
 interface UserProfile {
   email: string;
@@ -54,12 +53,6 @@ export function App() {
     typeof window !== 'undefined' ? parseSlugFromPath(window.location.pathname) : undefined;
 
   const [view, setView] = useState<AppView>(initialPathSlug ? 'workspace' : 'landing');
-  const [theme, setTheme] = useState<VesperTheme>(() => {
-    const saved =
-      typeof window !== 'undefined' ? window.localStorage.getItem('vesper-theme') : null;
-    if (saved === 'twilight' || saved === 'nocturne' || saved === 'mediterranean') return saved;
-    return 'twilight';
-  });
 
   const [initialPrompt, setInitialPrompt] = useState(
     'Hey, Vesper, plan a trip to Mexico City for a weekend on June 18th'
@@ -98,9 +91,13 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    window.localStorage.setItem('vesper-theme', theme);
-  }, [theme]);
+    document.documentElement.setAttribute('data-theme', 'twilight');
+    try {
+      window.localStorage.removeItem('vesper-theme');
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
 
   const notify = useCallback((msg: string) => {
     setToast(msg);
@@ -121,13 +118,6 @@ export function App() {
   useEffect(() => {
     refreshRecentTrips();
   }, [refreshRecentTrips]);
-
-  const handleThemeChange = useCallback((nextTheme: VesperTheme) => {
-    setTheme(nextTheme);
-    if (userProfileRef.current) {
-      travelApi.updateProfile({ preferredTheme: nextTheme }).catch(() => {});
-    }
-  }, []);
 
   const handleChangeHomeAirport = useCallback((airport: string) => {
     setHomeAirport(airport);
@@ -185,13 +175,6 @@ export function App() {
         } else if (loyaltyRef.current.length > 0) {
           // Push guest-added loyalty entries up to Supabase upon sign-in
           travelApi.updateProfile({ loyaltyPrograms: loyaltyRef.current }).catch(() => {});
-        }
-        if (
-          prefs.preferredTheme === 'twilight' ||
-          prefs.preferredTheme === 'nocturne' ||
-          prefs.preferredTheme === 'mediterranean'
-        ) {
-          setTheme(prefs.preferredTheme);
         }
       })
       .catch(() => {});
@@ -333,9 +316,7 @@ export function App() {
             className="h-full w-full"
           >
             <LandingView
-              theme={theme}
               userProfile={userProfile}
-              onChangeTheme={handleThemeChange}
               onStartTrip={handleStartTrip}
               onOpenSidebar={() => {
                 refreshRecentTrips();
@@ -368,8 +349,6 @@ export function App() {
               onChangeHomeAirport={handleChangeHomeAirport}
               onSaveDefaultTaste={handleSaveDefaultTaste}
               onOpenLoyaltyWallet={openLoyaltyWallet}
-              theme={theme}
-              onChangeTheme={handleThemeChange}
               onOpenSidebar={() => {
                 refreshRecentTrips();
                 setSidebarOpen(true);
@@ -388,10 +367,8 @@ export function App() {
 
       <TripSidebar
         isOpen={sidebarOpen}
-        theme={theme}
         userProfile={userProfile}
         loyaltyCount={loyaltyPrograms.length}
-        onChangeTheme={handleThemeChange}
         onClose={() => setSidebarOpen(false)}
         currentTripTitle={currentTripTitle}
         recentTrips={recentTrips}
