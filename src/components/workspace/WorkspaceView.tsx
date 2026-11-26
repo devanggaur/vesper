@@ -11,7 +11,6 @@ import {
   Loader2,
   Share2,
   Eye,
-  ArrowRight,
 } from 'lucide-react';
 import {
   ActivityItem,
@@ -1182,8 +1181,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               </span>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              {previewingAsGuest ? (
+            {previewingAsGuest && (
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setPreviewingAsGuest(false)}
@@ -1192,18 +1191,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 >
                   Exit preview
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onGoHome}
-                  className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[11.5px] font-medium cursor-pointer"
-                  style={{ color: '#FFFFFF' }}
-                >
-                  <span>Plan my own trip</span>
-                  <ArrowRight className="w-3 h-3" />
-                </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
 
