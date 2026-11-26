@@ -237,7 +237,9 @@ export const MobileChatCalibration: React.FC<MobileChatCalibrationProps> = ({
             <div className="text-[13px] font-semibold text-[#14191F] truncate">
               {destination ? `Planning ${destination}` : 'Quick trip setup'}
             </div>
-            <div className="font-tabular text-[11px] text-[#7B828A] truncate">{dates}</div>
+            {dates && dates.trim() && dates.toLowerCase() !== 'flexible dates' && (
+              <div className="font-tabular text-[11px] text-[#7B828A] truncate">{dates}</div>
+            )}
           </div>
         </div>
         <button

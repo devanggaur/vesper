@@ -102,6 +102,7 @@ export interface ParsedTripIntent {
   destination: string;
   country: string;
   tripTitle: string;
+  extractedDates?: string;
   tripMode: 'city' | 'roadtrip';
   roadTripDefaults?: {
     startCity: string;
@@ -146,6 +147,11 @@ export async function parseTripPrompt(
       destination: { type: 'string', description: 'Primary city, region, or scenic corridor name, e.g. Kyoto, Banff, or Pacific Coast Highway' },
       country: { type: 'string', description: 'Country name, e.g. Japan, Canada, or USA' },
       tripTitle: { type: 'string', description: 'Short editorial trip title, 3-5 words, e.g. Pacific Coast Highway Drive' },
+      extractedDates: {
+        type: 'string',
+        description:
+          'ONLY populate if the user explicitly mentioned a date, date range, month, season, or holiday in their prompt (e.g. "Jun 18 – 20", "Mid-October", "Thanksgiving"). Return empty string "" if the user did NOT mention when they are going—never invent dates.',
+      },
       tripMode: {
         type: 'string',
         enum: ['city', 'roadtrip'],
@@ -204,6 +210,7 @@ export async function parseTripPrompt(
     destination: string;
     country: string;
     tripTitle: string;
+    extractedDates?: string;
     tripMode?: 'city' | 'roadtrip';
     startCity?: string;
     transportMode?: 'drive_home' | 'fly_drive';
@@ -222,10 +229,10 @@ export async function parseTripPrompt(
     activitiesQuery: string;
     hotelsQuery: string;
   }>(
-    `User request: "${userPrompt}"\nSelected dates: "${datesLabel}"\nTravelers: "${travelers}"`,
+    `User request: "${userPrompt}"\nSelected dates: "${datesLabel || 'Not specified'}"\nTravelers: "${travelers}"`,
     regexRoadTrip
-      ? 'You are Vesper, an editorial AI travel planner. The user explicitly requested a road trip. Parse the prompt into clean structured trip metadata with tripMode="roadtrip", realistic startCity, transportMode, and legFrom, legTo, overnightTown, estDriveMinutes, and estDriveMiles on every day! Keep dayLabels between 3 and 5 days. Use crisp, warm editorial phrasing.'
-      : 'You are Vesper, an editorial AI travel planner. Parse any travel prompt worldwide into clean structured trip metadata with tripMode="city". Keep dayLabels between 3 and 5 days (default 3 days for weekends). Use crisp, warm editorial phrasing.',
+      ? 'You are Vesper, an editorial AI travel planner. The user explicitly requested a road trip. Parse the prompt into clean structured trip metadata with tripMode="roadtrip", realistic startCity, transportMode, and legFrom, legTo, overnightTown, estDriveMinutes, and estDriveMiles on every day! Keep dayLabels between 3 and 5 days using generic "Day 1", "Day 2", etc. unless the user explicitly gave calendar dates. Never fabricate dates if the user did not mention them (leave extractedDates=""). Use crisp, warm editorial phrasing.'
+      : 'You are Vesper, an editorial AI travel planner. Parse any travel prompt worldwide into clean structured trip metadata with tripMode="city". Keep dayLabels between 3 and 5 days using generic "Day 1", "Day 2", etc. unless the user explicitly gave calendar dates. Never fabricate dates if the user did not mention them (leave extractedDates=""). Use crisp, warm editorial phrasing.',
     schema
   );
 
@@ -260,6 +267,7 @@ export async function parseTripPrompt(
     destination: result.destination || 'Mexico City',
     country: result.country || '',
     tripTitle: result.tripTitle || `${result.destination} Escape`,
+    extractedDates: typeof result.extractedDates === 'string' ? result.extractedDates.trim() : '',
     tripMode,
     ...(tripMode === 'roadtrip'
       ? {

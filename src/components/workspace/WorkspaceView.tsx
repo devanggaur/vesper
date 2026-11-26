@@ -33,7 +33,7 @@ import {
 } from '../../types/travel';
 import { DEFAULT_CDMX_DAYS, travelApi } from '../../services/travelApi';
 import { inferActivityBookingType, inferPlaceBookingType } from '../../utils/bookingHelpers';
-import { extractQuickDestination } from '../../utils/destinationParser';
+import { extractQuickDates, extractQuickDestination } from '../../utils/destinationParser';
 import { BrandMark } from '../common/BrandMark';
 import { TasteProfile } from './TasteCard';
 import { ActivityCarousel, PlaceCarousel } from './DiscoverCarousels';
@@ -83,7 +83,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   tripSlug: existingTripSlug,
   initialPrompt,
   initialDestinationHint,
-  initialDates = 'Fri, Jun 19 – Sun, Jun 21',
+  initialDates = '',
   initialTravelers = '2 adults',
   initialFocusMode,
   savedDefaultTaste,
@@ -112,7 +112,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       ? ''
       : initialDestinationHint || extractQuickDestination(initialPrompt)
   );
-  const [datesLabel, setDatesLabel] = useState(initialDates);
+  const [datesLabel, setDatesLabel] = useState(() =>
+    initialDates || (existingTripId || existingTripSlug ? '' : extractQuickDates(initialPrompt))
+  );
   const [travelersLabel, setTravelersLabel] = useState(initialTravelers);
   const [days, setDays] = useState<TripDayMeta[]>(DEFAULT_CDMX_DAYS);
   const [mapCenter, setMapCenter] = useState<Coordinates>({ lat: 19.426, lng: -99.172 });
@@ -570,10 +572,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setMessages([userMsg]);
     setThinkingLabel('Understanding your trip...');
 
+    const quickDates = initialDates || extractQuickDates(initialPrompt);
     const createPromise = travelApi
       .createTrip({
         prompt: initialPrompt,
-        datesLabel: initialDates,
+        datesLabel: quickDates,
         travelers: initialTravelers,
       })
       .then(({ trip, messages: initMsgs }) => {
@@ -598,7 +601,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       .catch(() => {
         if (cancelled) return null;
         setThinkingLabel(null);
-        setDestination('Mexico City');
+        setDestination((prev) => prev || extractQuickDestination(initialPrompt) || 'Mexico City');
         setMessages([
           userMsg,
           {

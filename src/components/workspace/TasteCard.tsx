@@ -229,7 +229,9 @@ export const TasteCard: React.FC<TasteCardProps> = ({
           </h2>
         </div>
 
-        <span className="font-tabular text-[12px] text-[#7B828A] shrink-0">{dates}</span>
+        {dates && dates.trim() && dates.toLowerCase() !== 'flexible dates' && (
+          <span className="font-tabular text-[12px] text-[#7B828A] shrink-0">{dates}</span>
+        )}
       </div>
 
       {/* Road Trip Setup Panel (shown only when Road Trip Mode is active) */}

@@ -5,7 +5,6 @@ import { AppView, LoyaltyProgramEntry, TripSummary } from './types/travel';
 import { travelApi, UserPreferencesProfile } from './services/travelApi';
 import { supabaseBrowser } from './lib/supabaseClient';
 import { LandingView } from './components/landing/LandingView';
-import { getDefaultTripDateSelection } from './components/landing/DateRangePicker';
 import { WorkspaceView } from './components/workspace/WorkspaceView';
 import { TasteProfile } from './components/workspace/TasteCard';
 import { TripSidebar } from './components/common/TripSidebar';
@@ -57,7 +56,7 @@ export function App() {
   const [initialPrompt, setInitialPrompt] = useState(
     'Hey, Vesper, plan a trip to Mexico City for a weekend on June 18th'
   );
-  const [initialDates, setInitialDates] = useState(() => getDefaultTripDateSelection().label);
+  const [initialDates, setInitialDates] = useState('');
   const [initialTravelers, setInitialTravelers] = useState('2 adults');
   const [initialDestinationHint, setInitialDestinationHint] = useState<string | undefined>(undefined);
   const [focusMode, setFocusMode] = useState<'flights' | 'stays' | 'activities' | undefined>(
@@ -249,7 +248,7 @@ export function App() {
     setInitialPrompt(prompt);
     setInitialDestinationHint(destinationHint);
     setFocusMode(mode);
-    if (datesSummary) setInitialDates(datesSummary);
+    setInitialDates(datesSummary || '');
     if (travelers) setInitialTravelers(travelers);
     setWorkspaceKey((k) => k + 1);
     setView('workspace');

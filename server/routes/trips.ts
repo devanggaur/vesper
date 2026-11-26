@@ -499,7 +499,7 @@ tripsRoutes.delete('/:id/notes/:noteId', async (c) => {
 
 const createTripSchema = z.object({
   prompt: z.string().min(1),
-  datesLabel: z.string().default('Weekend getaway'),
+  datesLabel: z.string().default(''),
   travelers: z.string().default('2 adults'),
 });
 
@@ -514,7 +514,42 @@ tripsRoutes.post('/', async (c) => {
   const body = createTripSchema.parse(await c.req.json());
   const user = await store.verifyAccessToken(c.req.header('Authorization'));
 
-  const parsed = await parseTripPrompt(body.prompt, body.datesLabel, body.travelers);
+  let parsed: Awaited<ReturnType<typeof parseTripPrompt>>;
+  try {
+    parsed = await parseTripPrompt(body.prompt, body.datesLabel, body.travelers);
+  } catch (err) {
+    console.warn('[trips] parseTripPrompt fallback:', (err as Error)?.message?.slice(0, 140));
+    const isRoad = detectRoadTripPrompt(body.prompt);
+    const destMatch = body.prompt.match(
+      /\b(?:to|in|through|across|visiting|exploring)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'&-]{1,30})/i
+    );
+    const cleanedDest = (destMatch?.[1] || body.prompt)
+      .replace(
+        /\b(for\s+|(?:in|on)\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|spring|summer|fall|winter|mon|tue|wed|thu|fri|sat|sun)|with\s+|this\s+weekend|next\s+month|\d+\s*-?\s*day).*$/i,
+        ''
+      )
+      .replace(/\b(road\s*trip|trip|getaway|weekend|vacation)\s*$/i, '')
+      .trim() || 'Lisbon';
+    parsed = {
+      destination: cleanedDest,
+      country: '',
+      tripTitle: `${cleanedDest} ${isRoad ? 'Road Trip' : 'Getaway'}`,
+      extractedDates: '',
+      tripMode: isRoad ? 'roadtrip' : 'city',
+      days: [
+        { key: 'Day 1', short: 'Day 1', themeLabel: 'Arrival & First Walk', dotColor: '#C05A2B' },
+        { key: 'Day 2', short: 'Day 2', themeLabel: 'Core Highlights', dotColor: '#2563EB' },
+        { key: 'Day 3', short: 'Day 3', themeLabel: 'Local Gems & Departure', dotColor: '#0F766E' },
+      ],
+      welcomeSummary: `Welcome to **${cleanedDest}**—set your quick vibe preferences below and I’ll curate verified local spots, neighborhoods, and stays around your style.`,
+      searchQueries: {
+        hero: `${cleanedDest} iconic landmark skyline`,
+        activities: `best tours and experiences in ${cleanedDest}`,
+        hotels: `boutique hotels in ${cleanedDest}`,
+      },
+    };
+  }
+  const resolvedDatesLabel = body.datesLabel.trim() || parsed.extractedDates?.trim() || '';
 
   // Resolve real destination coordinates & hero photo via cached Google Places lookup
   const heroPlaces = await searchPlacesCached(parsed.searchQueries.hero, 2, parsed.destination);
@@ -528,7 +563,7 @@ tripsRoutes.post('/', async (c) => {
       destination: parsed.destination,
       country: parsed.country,
       prompt: body.prompt,
-      dates_label: body.datesLabel,
+      dates_label: resolvedDatesLabel,
       day_labels: parsed.days,
       center_lat: center.lat,
       center_lng: center.lng,

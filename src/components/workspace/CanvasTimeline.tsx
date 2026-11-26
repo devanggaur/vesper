@@ -339,7 +339,7 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                       className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/20 text-[11px] font-medium text-white transition-colors cursor-pointer"
                     >
                       <Calendar className="w-3 h-3 opacity-85" />
-                      <span className="font-tabular">{datesLabel}</span>
+                      <span className="font-tabular">{datesLabel || 'Add dates'}</span>
                     </button>
                   )}
                   {onUpdateTravelers && (
