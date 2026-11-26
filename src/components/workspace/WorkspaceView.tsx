@@ -37,6 +37,7 @@ import { inferActivityBookingType, inferPlaceBookingType } from '../../utils/boo
 import { extractQuickDestination } from '../../utils/destinationParser';
 import { BrandMark } from '../common/BrandMark';
 import { TasteCard, TasteProfile } from './TasteCard';
+import { MobileChatCalibration } from './MobileChatCalibration';
 import { ActivityCarousel, PlaceCarousel } from './DiscoverCarousels';
 import { CanvasTimeline } from './CanvasTimeline';
 import { CanvasBookings } from './CanvasBookings';
@@ -1307,21 +1308,40 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             <div className="h-full w-full overflow-y-auto thin-scrollbar px-4 sm:px-7 py-5 sm:py-6">
               {activeTab === 'discover' &&
                 (!tasteCalibrated ? (
-                  <div className="py-2 pb-24 lg:pb-8">
-                    <TasteCard
-                      destination={destination}
-                      dates={datesLabel}
-                      detectedTripMode={tripMode}
-                      initialStartCity={
-                        roadTripDefaults?.startCity ||
-                        homeAirport?.replace(/\s*\([A-Z]{3}\)\s*$/, '') ||
-                        ''
-                      }
-                      initialTransportMode={roadTripDefaults?.transportMode || 'drive_home'}
-                      initialProfile={tasteProfile || savedDefaultTaste}
-                      onSubmit={handleTasteSubmit}
-                    />
-                  </div>
+                  <>
+                    {/* Mobile (< 1024px): Compact thumb-friendly conversational calibration */}
+                    <div className="lg:hidden h-full">
+                      <MobileChatCalibration
+                        destination={destination}
+                        dates={datesLabel}
+                        detectedTripMode={tripMode}
+                        initialStartCity={
+                          roadTripDefaults?.startCity ||
+                          homeAirport?.replace(/\s*\([A-Z]{3}\)\s*$/, '') ||
+                          ''
+                        }
+                        initialTransportMode={roadTripDefaults?.transportMode || 'drive_home'}
+                        initialProfile={tasteProfile || savedDefaultTaste}
+                        onSubmit={handleTasteSubmit}
+                      />
+                    </div>
+                    {/* Desktop (>= 1024px): Full visual editorial TasteCard */}
+                    <div className="hidden lg:block py-2 pb-8">
+                      <TasteCard
+                        destination={destination}
+                        dates={datesLabel}
+                        detectedTripMode={tripMode}
+                        initialStartCity={
+                          roadTripDefaults?.startCity ||
+                          homeAirport?.replace(/\s*\([A-Z]{3}\)\s*$/, '') ||
+                          ''
+                        }
+                        initialTransportMode={roadTripDefaults?.transportMode || 'drive_home'}
+                        initialProfile={tasteProfile || savedDefaultTaste}
+                        onSubmit={handleTasteSubmit}
+                      />
+                    </div>
+                  </>
                 ) : isComposingCatalog ? (
                   <div className="max-w-[860px] mx-auto space-y-6 pb-20">
                     <div className="rounded-[22px] bg-white border border-black/[0.08] p-5 flex items-center gap-3 shadow-2xs">
@@ -1605,8 +1625,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           })}
         </nav>
 
-        {/* Mobile Floating Vesper Co-Pilot FAB (< 1024px, Organizer only) */}
-        {canEdit && !mobileCopilotOpen && (
+        {/* Mobile Floating Vesper Co-Pilot FAB (< 1024px, Organizer only, hidden during calibration chat) */}
+        {canEdit && tasteCalibrated && !mobileCopilotOpen && (
           <button
             type="button"
             onClick={() => {
