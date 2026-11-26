@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Menu,
   Mic,
   ArrowUp,
   ArrowRight,
   Square,
-  Sparkles,
   User,
   Briefcase,
 } from 'lucide-react';
@@ -14,10 +13,7 @@ import { BrandMark } from '../common/BrandMark';
 import { SmartImage } from '../common/SmartImage';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 import {
-  ALL_POSTCARDS,
   DEMO_VOICE_PROMPT,
-  MOOD_TABS,
-  MoodCategory,
   PostcardDestination,
   ROTATING_PLACEHOLDERS,
   ROW_1_POSTCARDS,
@@ -41,9 +37,8 @@ interface LandingViewProps {
 
 /**
  * Universal Vesper Homepage ("Horizon"):
- * - Clean, frictionless natural-language prompt composer with rotating examples & voice dictation.
- * - Traveler mood filter pills (`Anywhere`, `Cities`, `Beaches`, `Mountains & Nature`, etc.).
- * - Slow-drifting dual-row editorial postcard horizon that pauses on hover and filters by mood.
+ * - Clean, frictionless 2-row natural-language prompt composer with rotating examples & voice dictation.
+ * - Pure, uncluttered dual-row editorial postcard horizon that pauses on hover.
  */
 export const LandingView: React.FC<LandingViewProps> = ({
   userProfile,
@@ -55,7 +50,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
 }) => {
   const [prompt, setPrompt] = useState('');
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
-  const [activeMood, setActiveMood] = useState<MoodCategory>('Anywhere');
 
   const voice = useVoiceDictation({ demoPhrase: DEMO_VOICE_PROMPT, barCount: 40 });
 
@@ -74,12 +68,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
     onStartTrip(finalPrompt || DEMO_VOICE_PROMPT);
   };
 
-  const activeMoodObj = MOOD_TABS.find((m) => m.id === activeMood);
-  const filteredPostcards =
-    activeMood === 'Anywhere'
-      ? ALL_POSTCARDS
-      : ALL_POSTCARDS.filter((p) => p.moods.includes(activeMood));
-
   const renderPostcard = (dest: PostcardDestination, keySuffix: string) => (
     <button
       key={`${dest.id}-${keySuffix}`}
@@ -87,17 +75,14 @@ export const LandingView: React.FC<LandingViewProps> = ({
       onClick={() => onStartTrip(dest.prompt, undefined, undefined, undefined, dest.name)}
       className={`group relative ${
         dest.wide ? 'w-[240px] sm:w-[278px]' : 'w-[190px] sm:w-[220px]'
-      } h-[142px] sm:h-[168px] rounded-[18px] overflow-hidden shrink-0 text-left shadow-[0_6px_22px_rgba(14,32,52,0.09)] border border-black/[0.06] cursor-pointer transition-transform duration-300 hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-[#0E2034]`}
+      } h-[148px] sm:h-[176px] rounded-[18px] overflow-hidden shrink-0 text-left shadow-[0_6px_22px_rgba(14,32,52,0.09)] border border-black/[0.06] cursor-pointer transition-transform duration-300 hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-[#0E2034]`}
     >
       <SmartImage
         src={dest.image}
         alt={dest.name}
         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-black/10" />
-      <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-black/45 backdrop-blur-md text-[10px] font-medium text-white/95">
-        {dest.tag}
-      </span>
+      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
       <div className="absolute bottom-2.5 left-3 right-3 text-white">
         <div className="text-[14.5px] font-semibold leading-tight drop-shadow-xs">{dest.name}</div>
         <div className="text-[11px] text-white/80 leading-tight mt-0.5">{dest.country}</div>
@@ -265,89 +250,30 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </>
           )}
         </motion.form>
-
-        {/* Traveler Mood Filter Pills */}
-        <div className="w-full max-w-[780px] flex items-center justify-start sm:justify-center gap-1.5 overflow-x-auto no-scrollbar mt-4 pb-1 px-1">
-          {MOOD_TABS.map((m) => {
-            const active = activeMood === m.id;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setActiveMood(m.id)}
-                className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-medium border shrink-0 transition-all cursor-pointer ${
-                  active
-                    ? 'bg-[#0E2034] border-[#0E2034] shadow-2xs'
-                    : 'bg-white/85 text-[#4A535C] border-black/[0.08] hover:border-black/[0.2] hover:text-[#14191F]'
-                }`}
-              >
-                {m.id}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* One-Click Contextual Mood Prompt Pill */}
-        <AnimatePresence mode="wait">
-          {activeMoodObj?.samplePrompt && (
-            <motion.button
-              key={activeMoodObj.id}
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              type="button"
-              onClick={() => onStartTrip(activeMoodObj.samplePrompt!)}
-              className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#ECEAE2] hover:bg-[#E2DFD5] text-[12px] font-medium text-[#2C333A] transition-colors cursor-pointer max-w-full"
-            >
-              <Sparkles className="w-3 h-3 text-[#C85A17] shrink-0" />
-              <span className="truncate">Try: “{activeMoodObj.samplePrompt}”</span>
-              <ArrowRight className="w-3 h-3 shrink-0" />
-            </motion.button>
-          )}
-        </AnimatePresence>
       </section>
 
       {/* Slow-Drifting Dual-Row Editorial Postcard Horizon */}
-      <section className="flex-1 flex flex-col justify-center overflow-hidden pb-5 pt-1 min-h-[320px]">
-        <AnimatePresence mode="wait">
-          {activeMood === 'Anywhere' ? (
-            <motion.div
-              key="marquee-horizon"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.28 }}
-              className="space-y-3 vesper-edge-fade overflow-hidden py-1"
-            >
-              <div className="vesper-marquee-row overflow-hidden">
-                <div className="vesper-marquee-left gap-3 pr-3">
-                  {ROW_1_POSTCARDS.map((d) => renderPostcard(d, 'r1a'))}
-                  {ROW_1_POSTCARDS.map((d) => renderPostcard(d, 'r1b'))}
-                </div>
-              </div>
+      <section className="flex-1 flex flex-col justify-center overflow-hidden pb-6 pt-2 min-h-[340px]">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.32 }}
+          className="space-y-3.5 vesper-edge-fade overflow-hidden py-1"
+        >
+          <div className="vesper-marquee-row overflow-hidden">
+            <div className="vesper-marquee-left gap-3.5 pr-3.5">
+              {ROW_1_POSTCARDS.map((d) => renderPostcard(d, 'r1a'))}
+              {ROW_1_POSTCARDS.map((d) => renderPostcard(d, 'r1b'))}
+            </div>
+          </div>
 
-              <div className="vesper-marquee-row overflow-hidden">
-                <div className="vesper-marquee-right gap-3 pr-3">
-                  {ROW_2_POSTCARDS.map((d) => renderPostcard(d, 'r2a'))}
-                  {ROW_2_POSTCARDS.map((d) => renderPostcard(d, 'r2b'))}
-                </div>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key={`filtered-${activeMood}`}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.24 }}
-              className="max-w-[1200px] w-full mx-auto px-4 sm:px-8 overflow-y-auto thin-scrollbar"
-            >
-              <div className="flex flex-wrap justify-center gap-3.5 py-2">
-                {filteredPostcards.map((d) => renderPostcard(d, 'filtered'))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+          <div className="vesper-marquee-row overflow-hidden">
+            <div className="vesper-marquee-right gap-3.5 pr-3.5">
+              {ROW_2_POSTCARDS.map((d) => renderPostcard(d, 'r2a'))}
+              {ROW_2_POSTCARDS.map((d) => renderPostcard(d, 'r2b'))}
+            </div>
+          </div>
+        </motion.div>
       </section>
     </div>
   );
