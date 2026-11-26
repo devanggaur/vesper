@@ -505,11 +505,6 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
                       ★ Top voted
                     </span>
                   )}
-                  {hotel.livePricing && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-600/92 text-white text-[10.5px] font-semibold backdrop-blur-md shadow-xs">
-                      Live{hotel.pricePerNight ? ` · $${hotel.pricePerNight}/n` : ''}
-                    </span>
-                  )}
                 </div>
                 <div className="absolute top-3 right-3 flex items-center gap-1.5">
                   {onVote && (
@@ -561,9 +556,16 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
                   >
                     {hotel.name}
                   </div>
-                  <span className="text-[14.5px] font-semibold text-[#14191F] shrink-0">
-                    ${hotel.priceTotal}
-                  </span>
+                  <div className="text-right shrink-0 leading-tight">
+                    <div className="font-tabular text-[14.5px] font-semibold text-[#14191F]">
+                      ${hotel.priceTotal.toLocaleString()}
+                    </div>
+                    {hotel.pricePerNight ? (
+                      <div className="font-tabular text-[10.5px] text-[#7B828A]">
+                        ${hotel.pricePerNight}/night
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 text-[12px] text-[#5A626A] flex-wrap">

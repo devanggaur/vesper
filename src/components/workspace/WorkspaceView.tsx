@@ -171,6 +171,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     return null;
   }, [guestCollaborator, userProfile]);
 
+  // Hide voting & group polls on explicit solo trips unless someone has already voted/commented
+  const isSoloTrip = useMemo(() => {
+    const raw = (tasteProfile?.travelers || travelersLabel || '').trim().toLowerCase();
+    return raw === 'just me' || raw === 'solo' || /^1\s*(adult|traveler|guest|person)\b/.test(raw);
+  }, [tasteProfile?.travelers, travelersLabel]);
+  const showGroupCollab = !isSoloTrip || votes.length > 0 || notes.length > 0;
+
   const saveCollaboratorName = (name: string): CollaboratorIdentity => {
     const clean = name.trim();
     const key =
@@ -1281,7 +1288,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   notes={notes}
                   voterKey={effectiveCollaborator?.key}
                   isOrganizing={isOrganizing}
-                  onVote={handleCollabVote}
+                  onVote={showGroupCollab ? handleCollabVote : undefined}
                   onOpenShareModal={() => setShowShareModal(true)}
                   onSearchFlights={() => {
                     setBookingsSubTab('flights');
@@ -1335,8 +1342,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   votes={votes}
                   notes={notes}
                   voterKey={effectiveCollaborator?.key}
-                  onVote={handleCollabVote}
-                  onOpenSharePoll={() => setShowShareModal(true)}
+                  onVote={showGroupCollab ? handleCollabVote : undefined}
+                  onOpenSharePoll={showGroupCollab ? () => setShowShareModal(true) : undefined}
                   onToggleLike={handleToggleLike}
                   onOpenHotel={(h, openRooms = false) =>
                     setSheetTarget({ kind: 'hotel', item: h, focusRooms: openRooms })
@@ -1372,9 +1379,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onAddActivity={handleAddActivity}
                 onAddHotel={handleAddHotel}
                 onUpdateBookingStatus={handleUpdateItemBookingStatus}
-                onVote={handleCollabVote}
-                onAddNote={handleCollabAddNote}
-                onDeleteNote={handleCollabDeleteNote}
+                onVote={showGroupCollab ? handleCollabVote : undefined}
+                onAddNote={showGroupCollab ? handleCollabAddNote : undefined}
+                onDeleteNote={showGroupCollab ? handleCollabDeleteNote : undefined}
                 onAskVesper={(q) => {
                   setMobileCopilotOpen(true);
                   handleCoPilotSend(q);
