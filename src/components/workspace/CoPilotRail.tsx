@@ -70,7 +70,7 @@ export const CoPilotRail: React.FC<CoPilotRailProps> = ({
           <BrandMark size={26} className="shrink-0" />
           <div className="min-w-0">
             <div className="text-[13.5px] font-semibold text-[#14191F] leading-tight">
-              Vesper Co-Pilot
+              Ask Vesper
             </div>
             <div className="flex items-center gap-1.5 text-[11px] text-[#7B828A]">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
@@ -81,7 +81,7 @@ export const CoPilotRail: React.FC<CoPilotRailProps> = ({
                         ? sheetTarget.item.shortTitle
                         : sheetTarget.item.name
                     }`
-                  : 'Live trip intelligence'}
+                  : 'Tips, timing & itinerary tweaks'}
               </span>
             </div>
           </div>
@@ -91,7 +91,7 @@ export const CoPilotRail: React.FC<CoPilotRailProps> = ({
           <button
             onClick={onCloseMobile}
             className="p-1.5 rounded-full hover:bg-black/[0.05] text-[#4A535C] cursor-pointer"
-            aria-label="Close co-pilot"
+            aria-label="Close Ask Vesper"
           >
             <X className="w-5 h-5" />
           </button>

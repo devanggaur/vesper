@@ -208,30 +208,38 @@ export const PlaceCarousel: React.FC<PlaceCarouselProps> = ({
 
   return (
     <div className="space-y-3">
-      {title && (
-        <h3 className="font-editorial text-[22px] font-medium text-[#14191F] tracking-[-0.015em]">
-          {title}
-        </h3>
-      )}
-      {intro && (
-        <p className="text-[13.5px] leading-[1.6] text-[#2C333A] whitespace-pre-line">
-          {renderInlineBold(intro)}
-        </p>
-      )}
+      <div className="flex items-end justify-between gap-3">
+        <div className="space-y-1 min-w-0">
+          {title && (
+            <h3 className="font-editorial text-[22px] font-medium text-[#14191F] tracking-[-0.015em] leading-tight">
+              {title}
+            </h3>
+          )}
+          {intro && (
+            <p className="text-[13.5px] leading-[1.55] text-[#2C333A] whitespace-pre-line">
+              {renderInlineBold(intro)}
+            </p>
+          )}
+        </div>
 
-      <div className="flex justify-end gap-1.5 -mb-1">
-        <button
-          onClick={() => scrollBy(-1)}
-          className="w-7 h-7 rounded-full border border-black/[0.1] bg-white hover:bg-black/[0.03] flex items-center justify-center text-[#4A535C] cursor-pointer"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => scrollBy(1)}
-          className="w-7 h-7 rounded-full border border-black/[0.1] bg-white hover:bg-black/[0.03] flex items-center justify-center text-[#4A535C] cursor-pointer"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0 pb-0.5">
+          <button
+            type="button"
+            onClick={() => scrollBy(-1)}
+            aria-label="Scroll left"
+            className="w-7 h-7 rounded-full border border-black/[0.1] bg-white hover:bg-black/[0.03] flex items-center justify-center text-[#4A535C] cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollBy(1)}
+            aria-label="Scroll right"
+            className="w-7 h-7 rounded-full border border-black/[0.1] bg-white hover:bg-black/[0.03] flex items-center justify-center text-[#4A535C] cursor-pointer"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div

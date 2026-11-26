@@ -1638,7 +1638,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               backgroundColor: 'var(--v-cta)',
               borderColor: 'var(--v-surface)',
             }}
-            aria-label="Open Vesper AI Co-Pilot"
+            aria-label="Open Ask Vesper"
           >
             <BrandMark size={38} />
             {hasUnreadCopilot && (

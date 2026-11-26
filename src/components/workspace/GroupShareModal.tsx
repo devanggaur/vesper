@@ -257,7 +257,7 @@ export const GroupShareModal: React.FC<GroupShareModalProps> = ({
                 className="w-full mt-1 py-2 px-3 rounded-xl bg-[#F3F2EC] hover:bg-[#ECEAE2] text-[12px] font-semibold text-[#14191F] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#C85A17]" />
-                <span>Ask Co-Pilot to build around group votes</span>
+                <span>Ask Vesper to build around group votes</span>
               </button>
             )}
 
