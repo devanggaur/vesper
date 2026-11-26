@@ -20,6 +20,8 @@ export const config = {
   gygPartnerId: process.env.GYG_PARTNER_ID || '',
   viatorApiKey: process.env.VIATOR_API_KEY || '',
   viatorApiBaseUrl: process.env.VIATOR_API_BASE_URL || 'https://api.viator.com/partner',
+  /** Live Google Flights & Google Hotels real-time pricing + direct booking links */
+  serpApiKey: process.env.SERPAPI_API_KEY || '',
   /** Fast, low-cost model fallback chain so transient 503 demand spikes fail over quickly */
   geminiModels: [
     'gemini-3.5-flash-lite',

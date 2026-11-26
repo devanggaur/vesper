@@ -522,6 +522,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           checkOut: lastDay,
           roomName: room.name,
         },
+        bookingMeta: {
+          bookingType: 'reservation',
+          status: 'needed',
+          officialUrl: hotel.bookingUrl || hotel.website,
+          estimatedCostUsd: price,
+        },
       },
     ];
     setSavedItems(next);

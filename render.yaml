@@ -41,3 +41,5 @@ services:
         sync: false
       - key: VITE_VIATOR_PARTNER_ID
         sync: false
+      - key: SERPAPI_API_KEY
+        sync: false

@@ -54,11 +54,22 @@ export interface FlightSearchResponse {
   toCity?: string;
   fromCode?: string;
   toCode?: string;
+  outboundDate?: string;
+  returnDate?: string;
   outbound: FlightOption[];
   inbound: FlightOption[];
   fareClasses: FareClass[];
   providerBookingUrl?: string;
-  source?: 'amadeus' | 'estimated';
+  source?: 'serpapi' | 'amadeus' | 'estimated';
+}
+
+export interface LiveHotelSearchResponse {
+  hotels: HotelItem[];
+  checkInDate: string;
+  checkOutDate: string;
+  nights: number;
+  googleHotelsUrl: string;
+  source: 'serpapi' | 'curated';
 }
 
 export interface HandoffLinkInfo {
@@ -181,10 +192,42 @@ export const travelApi = {
     fromCity: string;
     toCity: string;
     datesLabel: string;
+    startDate?: string;
+    endDate?: string;
     adults: number;
     preferredAirlines?: string[];
   }): Promise<FlightSearchResponse> {
     return apiFetch<FlightSearchResponse>('/api/bookings/flights', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async searchReturnFlights(payload: {
+    fromCity: string;
+    toCity: string;
+    outboundDate: string;
+    returnDate: string;
+    adults: number;
+    departureToken: string;
+    preferredAirlines?: string[];
+  }): Promise<{ inbound: FlightOption[]; providerBookingUrl: string | null }> {
+    return apiFetch('/api/bookings/flights/return', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async searchHotels(payload: {
+    destination: string;
+    datesLabel: string;
+    startDate?: string;
+    endDate?: string;
+    adults: number;
+    queryOverride?: string;
+    preferredChains?: string[];
+  }): Promise<LiveHotelSearchResponse> {
+    return apiFetch<LiveHotelSearchResponse>('/api/bookings/hotels', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

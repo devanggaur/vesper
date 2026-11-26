@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { config } from '../config';
 import { store } from './supabase';
+import { parseTripIsoDates, searchSerpApiFlights } from './serpapi';
 import type { FareClass, FlightOption } from '../../src/types/travel';
 
 /**
@@ -21,11 +22,13 @@ export interface LiveFlightSearchResult {
   toCity: string;
   fromCode: string;
   toCode: string;
+  outboundDate: string;
+  returnDate: string;
   outbound: FlightOption[];
   inbound: FlightOption[];
   fareClasses: FareClass[];
   providerBookingUrl: string;
-  source: 'amadeus' | 'estimated';
+  source: 'serpapi' | 'amadeus' | 'estimated';
 }
 
 let cachedAmadeusToken: { token: string; expiresAt: number } | null = null;
@@ -110,34 +113,70 @@ export function buildActivityBookingUrl(
 /** Well-known city -> IATA lookup for instant zero-latency fallback */
 const KNOWN_AIRPORTS: Record<string, string> = {
   'san francisco': 'SFO',
+  'san jose': 'SJC',
+  'oakland': 'OAK',
   'new york': 'JFK',
+  'newark': 'EWR',
   'los angeles': 'LAX',
   'chicago': 'ORD',
   'seattle': 'SEA',
   'boston': 'BOS',
   'miami': 'MIA',
+  'austin': 'AUS',
+  'dallas': 'DFW',
+  'denver': 'DEN',
+  'atlanta': 'ATL',
+  'washington': 'IAD',
+  'toronto': 'YYZ',
+  'vancouver': 'YVR',
+  'montreal': 'YUL',
   'london': 'LHR',
   'paris': 'CDG',
   'lisbon': 'LIS',
-  'kyoto': 'KIX',
-  'tokyo': 'HND',
-  'mexico city': 'MEX',
-  'banff': 'YYC',
-  'calgary': 'YYC',
-  'rome': 'FCO',
+  'porto': 'OPO',
+  'madrid': 'MAD',
   'barcelona': 'BCN',
+  'rome': 'FCO',
+  'milan': 'MXP',
+  'florence': 'FLR',
+  'venice': 'VCE',
   'amsterdam': 'AMS',
   'zurich': 'ZRH',
+  'dublin': 'DUB',
+  'frankfurt': 'FRA',
+  'munich': 'MUC',
+  'athens': 'ATH',
+  'istanbul': 'IST',
+  'dubai': 'DXB',
+  'delhi': 'DEL',
+  'new delhi': 'DEL',
+  'mumbai': 'BOM',
+  'bengaluru': 'BLR',
+  'bangalore': 'BLR',
+  'singapore': 'SIN',
+  'hong kong': 'HKG',
+  'bangkok': 'BKK',
+  'seoul': 'ICN',
+  'kyoto': 'KIX',
+  'osaka': 'KIX',
+  'tokyo': 'HND',
+  'mexico city': 'MEX',
+  'cancun': 'CUN',
+  'banff': 'YYC',
+  'calgary': 'YYC',
   'amalfi': 'NAP',
   'amalfi coast': 'NAP',
+  'naples': 'NAP',
   'oaxaca': 'OAX',
   'sedona': 'PHX',
+  'phoenix': 'PHX',
   'bali': 'DPS',
   'sydney': 'SYD',
+  'melbourne': 'MEL',
   'reykjavik': 'KEF',
 };
 
-function guessIata(city: string): string {
+export function guessIata(city: string): string {
   const clean = city.trim();
   const parenMatch = clean.match(/\(([A-Z]{3})\)/);
   if (parenMatch) return parenMatch[1];
@@ -304,44 +343,114 @@ function buildFallbackFlightSchedule(
     },
   ];
 
+  const { startDate: outboundDate, endDate: returnDate } = parseTripIsoDates(datesLabel);
+
   return {
     fromCity,
     toCity,
     fromCode,
     toCode,
+    outboundDate,
+    returnDate,
     outbound,
     inbound,
     fareClasses,
-    providerBookingUrl: buildGoogleFlightsUrl(fromCode, toCode, datesLabel),
+    providerBookingUrl: buildGoogleFlightsUrl(fromCode, toCode, `${outboundDate} to ${returnDate}`),
     source: 'estimated',
   };
 }
 
 /**
- * Generates destination-aware round-trip flights & fare tiers for ANY origin/destination pair,
- * backed by Amadeus live offers when configured or Gemini-grounded route schedules cached in Supabase.
+ * Generates destination-aware round-trip flights & fare tiers for ANY origin/destination pair:
+ *  1. Live Google Flights via SerpApi when `SERPAPI_API_KEY` is configured (2h cached).
+ *  2. Live Amadeus GDS when `AMADEUS_*` keys are configured (30m cached).
+ *  3. Gemini-grounded real-world route schedules cached 12h in Supabase.
  */
 export async function searchFlightsForRoute(params: {
   fromCity: string;
   toCity: string;
   datesLabel: string;
+  startDate?: string;
+  endDate?: string;
   adults: number;
   preferredAirlines?: string[];
 }): Promise<LiveFlightSearchResult> {
   const fromNorm = params.fromCity.trim() || 'San Francisco';
   const toNorm = params.toCity.trim() || 'Mexico City';
   const adults = Math.min(8, Math.max(1, params.adults || 2));
+  const { startDate: outboundDate, endDate: returnDate } = parseTripIsoDates(
+    params.datesLabel,
+    params.startDate,
+    params.endDate
+  );
   const prefKey = (params.preferredAirlines || []).map((a) => a.toLowerCase()).sort().join(',');
-  const cacheKey = `flights:v1:${fromNorm.toLowerCase()}->${toNorm.toLowerCase()}:p${adults}${
+  const modeTag = config.serpApiKey ? 'serp' : 'est';
+  const cacheKey = `flights:v2:${modeTag}:${fromNorm.toLowerCase()}->${toNorm.toLowerCase()}:${outboundDate}:${returnDate}:p${adults}${
     prefKey ? `:l=${prefKey}` : ''
   }`;
 
   const cached = await store.getCache<LiveFlightSearchResult>(cacheKey);
   if (cached) {
-    return {
-      ...cached,
-      providerBookingUrl: buildGoogleFlightsUrl(cached.fromCode, cached.toCode, params.datesLabel),
-    };
+    return cached;
+  }
+
+  // 1. Live Google Flights via SerpApi (real airline schedules, flight numbers, prices & direct links)
+  if (config.serpApiKey) {
+    const originCode = guessIata(fromNorm);
+    const destCode = guessIata(toNorm);
+    const liveOutbound = await searchSerpApiFlights({
+      fromCode: originCode,
+      toCode: destCode,
+      outboundDate,
+      returnDate,
+      adults,
+      preferredAirlines: params.preferredAirlines,
+    });
+    if (liveOutbound && liveOutbound.flights.length > 0) {
+      const topToken = liveOutbound.flights[0].departureToken;
+      const liveReturn = topToken
+        ? await searchSerpApiFlights({
+            fromCode: originCode,
+            toCode: destCode,
+            outboundDate,
+            returnDate,
+            adults,
+            preferredAirlines: params.preferredAirlines,
+            departureToken: topToken,
+          })
+        : null;
+
+      const template = buildFallbackFlightSchedule(fromNorm, toNorm, params.datesLabel, adults);
+      const base = liveOutbound.flights[0].priceRoundTrip;
+      const liveResult: LiveFlightSearchResult = {
+        fromCity: fromNorm,
+        toCity: toNorm,
+        fromCode: originCode,
+        toCode: destCode,
+        outboundDate,
+        returnDate,
+        outbound: liveOutbound.flights,
+        inbound:
+          liveReturn && liveReturn.flights.length > 0
+            ? liveReturn.flights
+            : template.inbound.map((f, idx) => ({
+                ...f,
+                airline: liveOutbound.flights[idx % liveOutbound.flights.length].airline,
+                airlineLogo: liveOutbound.flights[idx % liveOutbound.flights.length].airlineLogo,
+                priceRoundTrip: liveOutbound.flights[idx % liveOutbound.flights.length].priceRoundTrip,
+                bookingUrl: liveOutbound.googleFlightsUrl,
+              })),
+        fareClasses: template.fareClasses.map((f, i) => ({
+          ...f,
+          price: i === 0 ? base : base + i * 110 * adults,
+          delta: i * 110 * adults,
+        })),
+        providerBookingUrl: liveOutbound.googleFlightsUrl,
+        source: 'serpapi',
+      };
+      await store.setCache(cacheKey, liveResult, 0.08); // ~2 hour TTL
+      return liveResult;
+    }
   }
 
   // 1. Live Amadeus GDS path (activates automatically once AMADEUS_* env vars are added)
@@ -436,6 +545,8 @@ export async function searchFlightsForRoute(params: {
               toCity: toNorm,
               fromCode: originCode,
               toCode: destCode,
+              outboundDate,
+              returnDate,
               outbound,
               inbound,
               fareClasses: buildFallbackFlightSchedule(fromNorm, toNorm, params.datesLabel, adults)

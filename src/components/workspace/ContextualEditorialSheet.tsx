@@ -891,13 +891,26 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
                         <span>{hotel.tagline}</span>
                       </div>
                     </div>
-                    <button
-                      onClick={() => jumpToHotelSection('rooms')}
-                      className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13px] font-medium cursor-pointer shrink-0"
-                    >
-                      <BedDouble className="w-4 h-4" />
-                      <span>Select room · ${hotel.priceTotal}</span>
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      {(hotel.bookingUrl || hotel.website) && (
+                        <a
+                          href={hotel.bookingUrl || hotel.website}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-full bg-white hover:bg-[#FAF9F5] border border-black/[0.12] text-[12.5px] font-medium text-[#14191F] transition-colors shrink-0"
+                        >
+                          <span>Book direct</span>
+                          <ExternalLink className="w-3.5 h-3.5 text-[#C85A17]" />
+                        </a>
+                      )}
+                      <button
+                        onClick={() => jumpToHotelSection('rooms')}
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[13px] font-medium cursor-pointer shrink-0"
+                      >
+                        <BedDouble className="w-4 h-4" />
+                        <span>Select room · ${hotel.priceTotal}</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Property Highlights */}

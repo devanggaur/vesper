@@ -129,6 +129,12 @@ export interface HotelItem {
   pickLabel?: string;
   whyChoose?: string;
   accolade?: string;
+  website?: string;
+  bookingUrl?: string;
+  pricePerNight?: number;
+  livePricing?: boolean;
+  freeCancellation?: boolean;
+  amenities?: string[];
   image: string;
   gallery: string[];
   coords: Coordinates;
@@ -155,6 +161,9 @@ export interface FlightOption {
   stopDetails?: string;
   priceRoundTrip: number;
   direction: 'outbound' | 'return';
+  airlineLogo?: string;
+  departureToken?: string;
+  bookingUrl?: string;
 }
 
 export interface FareClass {

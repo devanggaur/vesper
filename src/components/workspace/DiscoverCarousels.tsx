@@ -464,6 +464,11 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
                   alt={hotel.name}
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
+                {hotel.livePricing && (
+                  <span className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full bg-emerald-600/92 text-white text-[10.5px] font-semibold backdrop-blur-md shadow-xs">
+                    Live{hotel.pricePerNight ? ` · $${hotel.pricePerNight}/n` : ''}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -493,13 +498,18 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1.5 text-[12px] text-[#5A626A]">
+                <div className="flex items-center gap-1.5 text-[12px] text-[#5A626A] flex-wrap">
                   <span className="px-1.5 py-0.2 rounded-full bg-[#B68E35]/15 text-[#8E6C1E] font-bold text-[11px]">
                     {hotel.rating.toFixed(1)}
                   </span>
-                  <span>{hotel.reviews} reviews</span>
+                  <span>{hotel.reviews.toLocaleString()} reviews</span>
                   <span>·</span>
                   <span>{hotel.stars}-star hotel</span>
+                  {hotel.freeCancellation && (
+                    <span className="text-[10.5px] font-semibold text-emerald-700">
+                      · Free cancel
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-[12px] text-[#5A626A] line-clamp-2 leading-relaxed pt-0.5">

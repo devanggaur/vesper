@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BedDouble, Plane, ArrowRight, CheckCircle2, Award, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { BedDouble, Plane, ArrowRight, CheckCircle2, Award, X, Sparkles, ExternalLink } from 'lucide-react';
 import {
   FareClass,
   FlightOption,
@@ -7,7 +7,7 @@ import {
   LoyaltyProgramEntry,
   TripSavedItem,
 } from '../../types/travel';
-import { travelApi } from '../../services/travelApi';
+import { LiveHotelSearchResponse, travelApi } from '../../services/travelApi';
 import { HotelComparisonTable, HotelSearchCarousel } from './DiscoverCarousels';
 import { FlightSearchWidget } from './FlightSearchWidget';
 import { SmartImage } from '../common/SmartImage';
@@ -56,8 +56,85 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   onHoverId,
 }) => {
   const [dismissedPrompt, setDismissedPrompt] = useState(false);
+  const [liveHotelRes, setLiveHotelRes] = useState<LiveHotelSearchResponse | null>(null);
+  const [isLoadingHotels, setIsLoadingHotels] = useState(false);
 
-  const hotels = liveHotels && liveHotels.length > 0 ? liveHotels : travelApi.getHotels();
+  const curatedHotels = liveHotels && liveHotels.length > 0 ? liveHotels : travelApi.getHotels();
+  const preferredChains = useMemo(
+    () => loyaltyPrograms.filter((p) => p.category === 'hotel').map((p) => p.provider),
+    [loyaltyPrograms]
+  );
+  const preferredChainsKey = preferredChains.join(',');
+
+  const parsedAdults = useMemo(() => {
+    const m = travelers.match(/\d+/);
+    if (m) return Math.min(8, Math.max(1, parseInt(m[0], 10)));
+    if (travelers.toLowerCase().includes('solo')) return 1;
+    return 2;
+  }, [travelers]);
+
+  useEffect(() => {
+    if (subTab !== 'stays' || !destination) return;
+    let cancelled = false;
+    setIsLoadingHotels(true);
+    travelApi
+      .searchHotels({
+        destination,
+        datesLabel,
+        adults: parsedAdults,
+        preferredChains: preferredChains.length > 0 ? preferredChains : undefined,
+      })
+      .then((res) => {
+        if (!cancelled) {
+          setLiveHotelRes(res);
+          setIsLoadingHotels(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsLoadingHotels(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subTab, destination, datesLabel, parsedAdults, preferredChainsKey]);
+
+  // Merge live SerpApi hotel rates with curated stays (preserving curated insider sleep tips when names match)
+  const hotels = useMemo(() => {
+    const liveList = liveHotelRes?.hotels || [];
+    if (liveList.length === 0) return curatedHotels;
+    const seenNames = new Set<string>();
+    const merged: HotelItem[] = [];
+    for (const lh of liveList) {
+      const key = lh.name.toLowerCase().trim();
+      seenNames.add(key);
+      const match = curatedHotels.find(
+        (ch) =>
+          ch.name.toLowerCase().includes(key.slice(0, 14)) ||
+          key.includes(ch.name.toLowerCase().slice(0, 14))
+      );
+      merged.push(
+        match
+          ? {
+              ...lh,
+              whyChoose: match.whyChoose || lh.whyChoose,
+              pickLabel: match.pickLabel || lh.pickLabel,
+              deepDive: match.deepDive.length > 0 ? match.deepDive : lh.deepDive,
+              coords:
+                lh.coords.lat !== 0 && lh.coords.lng !== 0 ? lh.coords : match.coords,
+            }
+          : lh
+      );
+    }
+    for (const ch of curatedHotels) {
+      const key = ch.name.toLowerCase().trim();
+      if (!seenNames.has(key) && merged.length < 10) {
+        merged.push(ch);
+      }
+    }
+    return merged;
+  }, [curatedHotels, liveHotelRes]);
+
   const bookedHotel = items.find((i) => i.type === 'hotel');
   const bookedFlight = items.find((i) => i.type === 'flight');
   const bookedTours = items.filter((i) => i.type === 'activity');
@@ -239,6 +316,44 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
               </span>
             </div>
           )}
+
+          <div className="flex items-center justify-between gap-2 flex-wrap -mb-3">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium ${
+                liveHotelRes?.source === 'serpapi'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  : 'bg-[#ECEAE2] text-[#5A626A]'
+              }`}
+            >
+              <Sparkles
+                className={`w-3 h-3 ${
+                  liveHotelRes?.source === 'serpapi' ? 'text-emerald-600' : 'text-[#C85A17]'
+                }`}
+              />
+              <span>
+                {isLoadingHotels
+                  ? 'Checking live hotel rates...'
+                  : liveHotelRes?.source === 'serpapi'
+                  ? `Live Google Hotels · ${liveHotelRes.checkInDate} → ${liveHotelRes.checkOutDate}`
+                  : 'Curated stays · Direct hotel links'}
+              </span>
+            </span>
+
+            <a
+              href={
+                liveHotelRes?.googleHotelsUrl ||
+                `https://www.google.com/travel/hotels?q=${encodeURIComponent(
+                  `hotels in ${destination} ${datesLabel}`
+                )}`
+              }
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#14191F] hover:underline"
+            >
+              <span>Live Google Hotels</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
 
           <HotelSearchCarousel
             location={destination}

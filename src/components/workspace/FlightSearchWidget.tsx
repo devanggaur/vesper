@@ -30,13 +30,30 @@ interface FlightSearchWidgetProps {
 
 const ORIGIN_PRESETS = [
   'San Francisco (SFO)',
+  'San Jose (SJC)',
   'New York (JFK)',
+  'Newark (EWR)',
   'Los Angeles (LAX)',
   'Chicago (ORD)',
   'Seattle (SEA)',
   'Boston (BOS)',
   'Miami (MIA)',
+  'Austin (AUS)',
+  'Denver (DEN)',
+  'Dallas (DFW)',
+  'Atlanta (ATL)',
+  'Washington (IAD)',
+  'Toronto (YYZ)',
+  'Vancouver (YVR)',
   'London (LHR)',
+  'Paris (CDG)',
+  'Amsterdam (AMS)',
+  'Frankfurt (FRA)',
+  'Dubai (DXB)',
+  'New Delhi (DEL)',
+  'Mumbai (BOM)',
+  'Singapore (SIN)',
+  'Tokyo (HND)',
 ];
 
 const BADGE_PALETTES = [
@@ -47,7 +64,7 @@ const BADGE_PALETTES = [
   'bg-[#4C1D95] text-white',
 ];
 
-const AirlineBadge: React.FC<{ airline: string }> = ({ airline }) => {
+const AirlineBadge: React.FC<{ airline: string; logoUrl?: string }> = ({ airline, logoUrl }) => {
   const initials = airline
     .split(/\s+/)
     .map((w) => w[0])
@@ -58,12 +75,20 @@ const AirlineBadge: React.FC<{ airline: string }> = ({ airline }) => {
   const colorClass = BADGE_PALETTES[hash % BADGE_PALETTES.length];
 
   return (
-    <div className="flex items-center gap-1.5 shrink-0 max-w-[140px]">
-      <span
-        className={`w-5 h-5 rounded-md inline-flex items-center justify-center text-[9px] font-bold shrink-0 ${colorClass}`}
-      >
-        {initials}
-      </span>
+    <div className="flex items-center gap-1.5 shrink-0 max-w-[145px]">
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt={airline}
+          className="w-5 h-5 rounded-sm object-contain shrink-0 bg-white"
+        />
+      ) : (
+        <span
+          className={`w-5 h-5 rounded-md inline-flex items-center justify-center text-[9px] font-bold shrink-0 ${colorClass}`}
+        >
+          {initials}
+        </span>
+      )}
       <span className="text-[11px] font-bold tracking-wide text-[#14191F] truncate uppercase">
         {airline}
       </span>
@@ -95,7 +120,9 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
   const [originCity, setOriginCity] = useState(
     ORIGIN_PRESETS.find((p) => p.toLowerCase().includes(from.toLowerCase())) || from || 'San Francisco (SFO)'
   );
+  const [originDraft, setOriginDraft] = useState(originCity);
   const [flightData, setFlightData] = useState<FlightSearchResponse | null>(null);
+  const [dynamicReturnFlights, setDynamicReturnFlights] = useState<FlightOption[] | null>(null);
   const [isFetchingRoute, setIsFetchingRoute] = useState(true);
 
   const [step, setStep] = useState<'outbound' | 'return' | 'fare' | 'booked'>('outbound');
@@ -146,7 +173,7 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
   }, [originCity, to, dates, adults, preferredKey]);
 
   const outboundFlights = flightData?.outbound || [];
-  const returnFlights = flightData?.inbound || [];
+  const returnFlights = dynamicReturnFlights || flightData?.inbound || [];
   const fareClasses = flightData?.fareClasses || [];
 
   const uniqueAirlines = useMemo(
@@ -165,11 +192,49 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
     return true;
   });
 
+  const commitOrigin = (nextVal: string) => {
+    const clean = nextVal.trim();
+    if (!clean) {
+      setOriginDraft(originCity);
+      return;
+    }
+    if (clean !== originCity) {
+      setOriginCity(clean);
+      setDynamicReturnFlights(null);
+      onChangeOrigin?.(clean);
+    }
+  };
+
   const handleSelectOutbound = (flight: FlightOption) => {
     setSelectedOutbound(flight);
-    setIsLoadingStep(true);
     setStep('return');
-    setTimeout(() => setIsLoadingStep(false), 350);
+    if (
+      flight.departureToken &&
+      flightData?.source === 'serpapi' &&
+      flightData.outboundDate &&
+      flightData.returnDate
+    ) {
+      setIsLoadingStep(true);
+      travelApi
+        .searchReturnFlights({
+          fromCity: originCity,
+          toCity: to,
+          outboundDate: flightData.outboundDate,
+          returnDate: flightData.returnDate,
+          adults,
+          departureToken: flight.departureToken,
+          preferredAirlines:
+            preferredAirlines && preferredAirlines.length > 0 ? preferredAirlines : undefined,
+        })
+        .then((res) => {
+          if (res.inbound.length > 0) setDynamicReturnFlights(res.inbound);
+        })
+        .catch(() => {})
+        .finally(() => setIsLoadingStep(false));
+      return;
+    }
+    setIsLoadingStep(true);
+    setTimeout(() => setIsLoadingStep(false), 300);
   };
 
   const handleSelectReturn = (flight: FlightOption) => {
@@ -212,28 +277,36 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Top Search Parameters Bar (with editable Origin selector) */}
+      {/* Top Search Parameters Bar (universal searchable origin airport/city) */}
       <div className="rounded-[18px] bg-white border border-black/[0.08] grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-black/[0.07] shadow-2xs overflow-hidden">
         <div className="px-3.5 py-2 border-r sm:border-r-0 border-black/[0.07] relative">
-          <label className="block text-[10.5px] text-[#7B828A]">From</label>
-          <div className="flex items-center justify-between">
-            <select
-              value={originCity}
-              onChange={(e) => {
-                setOriginCity(e.target.value);
-                onChangeOrigin?.(e.target.value);
-              }}
-              className="w-full appearance-none [-webkit-appearance:none] bg-transparent text-[13px] font-semibold text-[#14191F] focus:outline-none cursor-pointer pr-4 truncate"
-              aria-label="Departure airport"
-            >
-              {ORIGIN_PRESETS.map((city) => (
-                <option key={city} value={city}>
-                  {city}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-[#7B828A] pointer-events-none shrink-0 -ml-4" />
-          </div>
+          <label htmlFor="vesper-origin-airport" className="block text-[10.5px] text-[#7B828A]">
+            From (any city or IATA)
+          </label>
+          <input
+            id="vesper-origin-airport"
+            list="vesper-origin-airports"
+            value={originDraft}
+            onChange={(e) => {
+              const val = e.target.value;
+              setOriginDraft(val);
+              if (ORIGIN_PRESETS.includes(val)) commitOrigin(val);
+            }}
+            onBlur={() => commitOrigin(originDraft)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitOrigin(originDraft);
+              }
+            }}
+            placeholder="e.g. SFO, Austin, DEL"
+            className="w-full bg-transparent text-[13px] font-semibold text-[#14191F] focus:outline-none truncate"
+          />
+          <datalist id="vesper-origin-airports">
+            {ORIGIN_PRESETS.map((city) => (
+              <option key={city} value={city} />
+            ))}
+          </datalist>
         </div>
         <div className="px-3.5 py-2">
           <div className="text-[10.5px] text-[#7B828A]">To</div>
@@ -288,9 +361,27 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
           )}
 
           {flightData?.source && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#ECEAE2] text-[11px] font-medium text-[#5A626A] shrink-0">
-              <Sparkles className="w-3 h-3 text-[#C85A17]" />
-              <span>{flightData.source === 'amadeus' ? 'Live GDS fares' : 'Route estimate'}</span>
+            <span
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium shrink-0 ${
+                flightData.source === 'serpapi' || flightData.source === 'amadeus'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  : 'bg-[#ECEAE2] text-[#5A626A]'
+              }`}
+            >
+              <Sparkles
+                className={`w-3 h-3 ${
+                  flightData.source === 'serpapi' || flightData.source === 'amadeus'
+                    ? 'text-emerald-600'
+                    : 'text-[#C85A17]'
+                }`}
+              />
+              <span>
+                {flightData.source === 'serpapi'
+                  ? `Live Google Flights${flightData.outboundDate ? ` · ${flightData.outboundDate}` : ''}`
+                  : flightData.source === 'amadeus'
+                  ? 'Live GDS fares'
+                  : 'Route estimate'}
+              </span>
             </span>
           )}
         </div>
@@ -373,7 +464,7 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
               >
                 {/* Mobile Top Row: Airline + Price */}
                 <div className="flex sm:hidden items-center justify-between w-full">
-                  <AirlineBadge airline={flt.airline} />
+                  <AirlineBadge airline={flt.airline} logoUrl={flt.airlineLogo} />
                   <div className="flex items-baseline gap-1">
                     <span className="font-tabular text-[15px] font-semibold text-[#14191F]">
                       ${flt.priceRoundTrip.toLocaleString()}
@@ -383,8 +474,11 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
                 </div>
 
                 {/* Desktop Airline Column */}
-                <div className="hidden sm:block w-[135px] shrink-0">
-                  <AirlineBadge airline={flt.airline} />
+                <div className="hidden sm:block w-[140px] shrink-0">
+                  <AirlineBadge airline={flt.airline} logoUrl={flt.airlineLogo} />
+                  <div className="text-[10px] text-[#7B828A] pl-6.5 truncate">
+                    {flt.flightNumber}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0 w-full">
@@ -401,7 +495,10 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
                       <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-black/25" />
                       <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-black/25" />
                     </div>
-                    <span className="text-[10.5px] text-[#5A626A]">{flt.stops}</span>
+                    <span className="text-[10.5px] text-[#5A626A] truncate max-w-[140px]">
+                      {flt.stops}
+                      {flt.stopDetails ? ` · ${flt.stopDetails}` : ''}
+                    </span>
                   </div>
 
                   <div>

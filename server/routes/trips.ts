@@ -216,6 +216,10 @@ function toHotelItem(
       curated?.whyChoose ||
       gp.editorialSummary ||
       `Strong ${gp.rating.toFixed(1)}★ guest rating (${gp.reviews.toLocaleString()} reviews) in ${gp.neighborhood}, well positioned for your itinerary.`,
+    website: gp.website,
+    bookingUrl: gp.website,
+    pricePerNight: Math.round(twoNightTotal / 2),
+    livePricing: false,
     image: gallery[0] || '',
     gallery: gallery.length > 0 ? gallery : [''],
     coords: { lat: gp.lat, lng: gp.lng },
