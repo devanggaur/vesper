@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ChevronDown,
@@ -14,6 +14,8 @@ import {
   Check,
   Sparkles,
   ExternalLink,
+  Clock,
+  X,
 } from 'lucide-react';
 import { FareClass, FlightOption } from '../../types/travel';
 import { FlightSearchResponse, travelApi } from '../../services/travelApi';
@@ -103,6 +105,40 @@ function parseAdultCount(passengers: string): number {
   return 2;
 }
 
+function parseClockHour(clockStr: string): number {
+  const match = clockStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return 12;
+  let h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const period = match[3].toUpperCase();
+  if (period === 'AM' && h === 12) h = 0;
+  if (period === 'PM' && h < 12) h += 12;
+  return h + m / 60;
+}
+
+function parseStopsCount(stopsStr: string): number {
+  const lower = stopsStr.toLowerCase();
+  if (lower.includes('nonstop') || lower.includes('direct')) return 0;
+  const m = lower.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 1;
+}
+
+function formatHourShort(hour: number): string {
+  if (hour <= 0) return '12 AM';
+  if (hour >= 24) return '11:59 PM';
+  if (hour === 12) return '12 PM';
+  return hour < 12 ? `${hour} AM` : `${hour - 12} PM`;
+}
+
+const TIME_PRESETS: Array<{ label: string; range: [number, number] }> = [
+  { label: 'Any', range: [0, 24] },
+  { label: 'Morning', range: [5, 12] },
+  { label: 'Afternoon', range: [12, 18] },
+  { label: 'Evening', range: [18, 24] },
+];
+
+type StopsFilterMode = 'any' | 'nonstop' | 'max1';
+
 /**
  * Interactive 3-step universal flight booking widget (Outbound → Return → Fare Class selection).
  * Lazy-loads live or AI-grounded routes for ANY origin/destination pair via `POST /api/bookings/flights`
@@ -127,15 +163,38 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
 
   const [step, setStep] = useState<'outbound' | 'return' | 'fare' | 'booked'>('outbound');
   const [isLoadingStep, setIsLoadingStep] = useState(false);
-  const [nonstopOnly, setNonstopOnly] = useState(false);
-  const [airlineFilter, setAirlineFilter] = useState<string>('all');
+  const [stopsFilter, setStopsFilter] = useState<StopsFilterMode>('any');
+  const [selectedAirlines, setSelectedAirlines] = useState<string[]>([]);
+  const [departRange, setDepartRange] = useState<[number, number]>([0, 24]);
+  const [arriveRange, setArriveRange] = useState<[number, number]>([0, 24]);
+  const [openMenu, setOpenMenu] = useState<'stops' | 'airlines' | 'times' | null>(null);
+  const filterBarRef = useRef<HTMLDivElement>(null);
+
   const [selectedOutbound, setSelectedOutbound] = useState<FlightOption | null>(null);
   const [selectedReturn, setSelectedReturn] = useState<FlightOption | null>(null);
   const [addingFareId, setAddingFareId] = useState<string | null>(null);
 
   const adults = useMemo(() => parseAdultCount(passengers), [passengers]);
-
   const preferredKey = (preferredAirlines || []).join(',');
+
+  // Close open filter dropdown on outside click or Escape
+  useEffect(() => {
+    if (!openMenu) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (filterBarRef.current && !filterBarRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenMenu(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [openMenu]);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,7 +202,11 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
     setStep('outbound');
     setSelectedOutbound(null);
     setSelectedReturn(null);
-    setAirlineFilter('all');
+    setSelectedAirlines([]);
+    setStopsFilter('any');
+    setDepartRange([0, 24]);
+    setArriveRange([0, 24]);
+    setOpenMenu(null);
 
     travelApi
       .searchFlights({
@@ -176,21 +239,77 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
   const returnFlights = dynamicReturnFlights || flightData?.inbound || [];
   const fareClasses = flightData?.fareClasses || [];
 
-  const uniqueAirlines = useMemo(
-    () => Array.from(new Set(outboundFlights.map((f) => f.airline))),
-    [outboundFlights]
-  );
+  const activeStepFlights = step === 'return' ? returnFlights : outboundFlights;
 
-  const filteredOutbound = outboundFlights.filter((f) => {
-    if (nonstopOnly && f.stops !== 'Nonstop') return false;
-    if (airlineFilter !== 'all' && f.airline !== airlineFilter) return false;
-    return true;
-  });
+  const uniqueAirlines = useMemo(() => {
+    const counts = new Map<string, number>();
+    activeStepFlights.forEach((f) => {
+      counts.set(f.airline, (counts.get(f.airline) || 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([name, count]) => ({ name, count }));
+  }, [activeStepFlights]);
 
-  const filteredReturn = returnFlights.filter((f) => {
-    if (nonstopOnly && f.stops !== 'Nonstop') return false;
+  const matchesFlightFilters = (f: FlightOption) => {
+    const stopsCount = parseStopsCount(f.stops);
+    if (stopsFilter === 'nonstop' && stopsCount > 0) return false;
+    if (stopsFilter === 'max1' && stopsCount > 1) return false;
+    if (selectedAirlines.length > 0 && !selectedAirlines.includes(f.airline)) return false;
+
+    const depH = parseClockHour(f.departTime);
+    if (depH < departRange[0] || depH > departRange[1]) return false;
+
+    const arrH = parseClockHour(f.arriveTime);
+    if (arrH < arriveRange[0] || arrH > arriveRange[1]) return false;
+
     return true;
-  });
+  };
+
+  const filteredOutbound = outboundFlights.filter(matchesFlightFilters);
+  const filteredReturn = returnFlights.filter(matchesFlightFilters);
+  const visibleFlights = step === 'outbound' ? filteredOutbound : filteredReturn;
+
+  const isTimeFiltered =
+    departRange[0] > 0 || departRange[1] < 24 || arriveRange[0] > 0 || arriveRange[1] < 24;
+  const hasActiveFilters =
+    stopsFilter !== 'any' || selectedAirlines.length > 0 || isTimeFiltered;
+
+  const resetAllFilters = () => {
+    setStopsFilter('any');
+    setSelectedAirlines([]);
+    setDepartRange([0, 24]);
+    setArriveRange([0, 24]);
+  };
+
+  const toggleAirline = (name: string) => {
+    setSelectedAirlines((prev) =>
+      prev.includes(name) ? prev.filter((a) => a !== name) : [...prev, name]
+    );
+  };
+
+  const stopsPillLabel =
+    stopsFilter === 'nonstop'
+      ? 'Nonstop only'
+      : stopsFilter === 'max1'
+      ? '1 stop or fewer'
+      : 'Any stops';
+
+  const airlinesPillLabel =
+    selectedAirlines.length === 0
+      ? 'All airlines'
+      : selectedAirlines.length === 1
+      ? selectedAirlines[0]
+      : `${selectedAirlines.length} airlines`;
+
+  const timesPillLabel = (() => {
+    const parts: string[] = [];
+    if (departRange[0] > 0 || departRange[1] < 24) {
+      parts.push(`Dep ${formatHourShort(departRange[0])}–${formatHourShort(departRange[1])}`);
+    }
+    if (arriveRange[0] > 0 || arriveRange[1] < 24) {
+      parts.push(`Arr ${formatHourShort(arriveRange[0])}–${formatHourShort(arriveRange[1])}`);
+    }
+    return parts.length > 0 ? parts.join(' · ') : 'Times';
+  })();
 
   const commitOrigin = (nextVal: string) => {
     const clean = nextVal.trim();
@@ -324,39 +443,354 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
         </div>
       </div>
 
-      {/* Filter Pills + Direct Provider Link Row */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-          <button
-            type="button"
-            onClick={() => setNonstopOnly((v) => !v)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 transition-colors cursor-pointer ${
-              nonstopOnly
-                ? 'bg-[#0E2034] border-[#0E2034]'
-                : 'bg-white text-[#2C333A] border-black/[0.1] hover:border-black/[0.25]'
-            }`}
-          >
-            <span>{nonstopOnly ? 'Nonstop only' : 'Any stops'}</span>
-            <ChevronDown className="w-3 h-3" />
-          </button>
-
-          {uniqueAirlines.length > 0 && (
+      {/* Interactive Filter Dropdowns + Direct Provider Link Row */}
+      <div
+        ref={filterBarRef}
+        className="flex items-center justify-between gap-2 flex-wrap relative z-30"
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 1. Stops Dropdown */}
+          <div className="relative">
             <button
               type="button"
-              onClick={() => {
-                const cycle = ['all', ...uniqueAirlines];
-                const idx = cycle.indexOf(airlineFilter);
-                setAirlineFilter(cycle[(idx + 1) % cycle.length]);
-              }}
+              onClick={() => setOpenMenu((m) => (m === 'stops' ? null : 'stops'))}
+              aria-expanded={openMenu === 'stops'}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 transition-colors cursor-pointer ${
-                airlineFilter !== 'all'
-                  ? 'bg-[#0E2034] border-[#0E2034]'
+                stopsFilter !== 'any' || openMenu === 'stops'
+                  ? 'bg-[#0E2034] text-white border-[#0E2034]'
                   : 'bg-white text-[#2C333A] border-black/[0.1] hover:border-black/[0.25]'
               }`}
+              style={
+                stopsFilter !== 'any' || openMenu === 'stops' ? { color: '#FFFFFF' } : undefined
+              }
             >
-              <Plane className="w-3 h-3" />
-              <span>{airlineFilter === 'all' ? 'All airlines' : airlineFilter}</span>
-              <ChevronDown className="w-3 h-3" />
+              <span>{stopsPillLabel}</span>
+              <ChevronDown
+                className={`w-3 h-3 transition-transform ${openMenu === 'stops' ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {openMenu === 'stops' && (
+              <div className="absolute left-0 top-full mt-1.5 w-52 rounded-2xl bg-white border border-black/[0.1] shadow-xl p-2 space-y-1 z-40">
+                {(
+                  [
+                    { id: 'any', label: 'Any stops', count: activeStepFlights.length },
+                    {
+                      id: 'nonstop',
+                      label: 'Nonstop only',
+                      count: activeStepFlights.filter((f) => parseStopsCount(f.stops) === 0).length,
+                    },
+                    {
+                      id: 'max1',
+                      label: '1 stop or fewer',
+                      count: activeStepFlights.filter((f) => parseStopsCount(f.stops) <= 1).length,
+                    },
+                  ] as const
+                ).map((opt) => {
+                  const selected = stopsFilter === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setStopsFilter(opt.id);
+                        setOpenMenu(null);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[12.5px] transition-colors cursor-pointer ${
+                        selected
+                          ? 'bg-[#F3F2EC] font-semibold text-[#14191F]'
+                          : 'text-[#2C333A] hover:bg-[#FAF9F5]'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            selected ? 'border-[#0E2034] bg-[#0E2034]' : 'border-black/25'
+                          }`}
+                        >
+                          {selected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </span>
+                        <span>{opt.label}</span>
+                      </span>
+                      <span className="font-tabular text-[11px] text-[#7B828A]">{opt.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 2. Airlines Multi-Select Dropdown */}
+          {uniqueAirlines.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenMenu((m) => (m === 'airlines' ? null : 'airlines'))}
+                aria-expanded={openMenu === 'airlines'}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 transition-colors cursor-pointer ${
+                  selectedAirlines.length > 0 || openMenu === 'airlines'
+                    ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                    : 'bg-white text-[#2C333A] border-black/[0.1] hover:border-black/[0.25]'
+                }`}
+                style={
+                  selectedAirlines.length > 0 || openMenu === 'airlines'
+                    ? { color: '#FFFFFF' }
+                    : undefined
+                }
+              >
+                <Plane className="w-3 h-3" />
+                <span>{airlinesPillLabel}</span>
+                <ChevronDown
+                  className={`w-3 h-3 transition-transform ${
+                    openMenu === 'airlines' ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {openMenu === 'airlines' && (
+                <div className="absolute left-0 top-full mt-1.5 w-64 rounded-2xl bg-white border border-black/[0.1] shadow-xl p-2.5 space-y-2 z-40">
+                  <div className="flex items-center justify-between px-1.5 pb-1.5 border-b border-black/[0.06]">
+                    <span className="text-[11.5px] font-semibold text-[#14191F]">Airlines</span>
+                    {selectedAirlines.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAirlines([])}
+                        className="text-[11px] font-semibold text-[#C85A17] hover:underline cursor-pointer"
+                      >
+                        Show all
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-52 overflow-y-auto thin-scrollbar space-y-0.5">
+                    {uniqueAirlines.map(({ name, count }) => {
+                      const checked =
+                        selectedAirlines.length === 0 || selectedAirlines.includes(name);
+                      const explicitlyPicked = selectedAirlines.includes(name);
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => toggleAirline(name)}
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-[#FAF9F5] text-left text-[12.5px] text-[#14191F] transition-colors cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
+                                explicitlyPicked
+                                  ? 'bg-[#0E2034] border-[#0E2034] text-white'
+                                  : checked
+                                  ? 'bg-[#F3F2EC] border-black/20 text-[#14191F]'
+                                  : 'bg-white border-black/20'
+                              }`}
+                            >
+                              {checked && <Check className="w-3 h-3" strokeWidth={2.5} />}
+                            </span>
+                            <span className="truncate">{name}</span>
+                          </span>
+                          <span className="font-tabular text-[11px] text-[#7B828A] shrink-0">
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3. Departure & Arrival Time Range Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenMenu((m) => (m === 'times' ? null : 'times'))}
+              aria-expanded={openMenu === 'times'}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border shrink-0 transition-colors cursor-pointer ${
+                isTimeFiltered || openMenu === 'times'
+                  ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                  : 'bg-white text-[#2C333A] border-black/[0.1] hover:border-black/[0.25]'
+              }`}
+              style={isTimeFiltered || openMenu === 'times' ? { color: '#FFFFFF' } : undefined}
+            >
+              <Clock className="w-3 h-3" />
+              <span className="max-w-[200px] truncate">{timesPillLabel}</span>
+              <ChevronDown
+                className={`w-3 h-3 transition-transform ${openMenu === 'times' ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {openMenu === 'times' && (
+              <div className="absolute left-0 top-full mt-1.5 w-[300px] sm:w-[330px] rounded-2xl bg-white border border-black/[0.1] shadow-xl p-4 space-y-4 z-40">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12.5px] font-semibold text-[#14191F]">
+                    {step === 'return' ? 'Return' : 'Outbound'} flight times
+                  </span>
+                  {isTimeFiltered && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDepartRange([0, 24]);
+                        setArriveRange([0, 24]);
+                      }}
+                      className="text-[11px] font-semibold text-[#C85A17] hover:underline cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+
+                {/* Departure Window */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="font-semibold text-[#14191F]">Departure</span>
+                    <span className="font-tabular text-[11.5px] text-[#5A626A]">
+                      {formatHourShort(departRange[0])} – {formatHourShort(departRange[1])}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {TIME_PRESETS.map((preset) => {
+                      const active =
+                        departRange[0] === preset.range[0] && departRange[1] === preset.range[1];
+                      return (
+                        <button
+                          key={`dep-${preset.label}`}
+                          type="button"
+                          onClick={() => setDepartRange(preset.range)}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                              : 'bg-[#FAF9F5] text-[#2C333A] border-black/[0.08] hover:border-black/[0.2]'
+                          }`}
+                          style={active ? { color: '#FFFFFF' } : undefined}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-0.5">
+                    <label className="text-[10.5px] text-[#7B828A] space-y-1">
+                      <span>Earliest ({formatHourShort(departRange[0])})</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={23}
+                        step={1}
+                        value={departRange[0]}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setDepartRange([v, Math.max(v + 1, departRange[1])]);
+                        }}
+                        className="w-full accent-[#0E2034] cursor-pointer"
+                      />
+                    </label>
+                    <label className="text-[10.5px] text-[#7B828A] space-y-1">
+                      <span>Latest ({formatHourShort(departRange[1])})</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={24}
+                        step={1}
+                        value={departRange[1]}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setDepartRange([Math.min(departRange[0], v - 1), v]);
+                        }}
+                        className="w-full accent-[#0E2034] cursor-pointer"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Arrival Window */}
+                <div className="space-y-2 pt-2 border-t border-black/[0.06]">
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="font-semibold text-[#14191F]">Arrival</span>
+                    <span className="font-tabular text-[11.5px] text-[#5A626A]">
+                      {formatHourShort(arriveRange[0])} – {formatHourShort(arriveRange[1])}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {TIME_PRESETS.map((preset) => {
+                      const active =
+                        arriveRange[0] === preset.range[0] && arriveRange[1] === preset.range[1];
+                      return (
+                        <button
+                          key={`arr-${preset.label}`}
+                          type="button"
+                          onClick={() => setArriveRange(preset.range)}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                              : 'bg-[#FAF9F5] text-[#2C333A] border-black/[0.08] hover:border-black/[0.2]'
+                          }`}
+                          style={active ? { color: '#FFFFFF' } : undefined}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-0.5">
+                    <label className="text-[10.5px] text-[#7B828A] space-y-1">
+                      <span>Earliest ({formatHourShort(arriveRange[0])})</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={23}
+                        step={1}
+                        value={arriveRange[0]}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setArriveRange([v, Math.max(v + 1, arriveRange[1])]);
+                        }}
+                        className="w-full accent-[#0E2034] cursor-pointer"
+                      />
+                    </label>
+                    <label className="text-[10.5px] text-[#7B828A] space-y-1">
+                      <span>Latest ({formatHourShort(arriveRange[1])})</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={24}
+                        step={1}
+                        value={arriveRange[1]}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setArriveRange([Math.min(arriveRange[0], v - 1), v]);
+                        }}
+                        className="w-full accent-[#0E2034] cursor-pointer"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-black/[0.06]">
+                  <span className="text-[11.5px] text-[#5A626A]">
+                    Showing <strong className="text-[#14191F]">{visibleFlights.length}</strong> of{' '}
+                    {activeStepFlights.length} flights
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setOpenMenu(null)}
+                    className="px-3 py-1 rounded-full bg-[#0E2034] text-[11.5px] font-medium cursor-pointer"
+                    style={{ color: '#FFFFFF' }}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetAllFilters}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11.5px] font-medium text-[#C85A17] hover:bg-black/[0.04] cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+              <span>Reset</span>
             </button>
           )}
 
@@ -451,8 +885,26 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
           </div>
         ) : step === 'outbound' || step === 'return' ? (
           /* Flight Option Rows */
-          <div className="space-y-2">
-            {(step === 'outbound' ? filteredOutbound : filteredReturn).map((flt) => (
+          visibleFlights.length === 0 ? (
+            <div className="rounded-2xl bg-white border border-black/[0.07] p-6 text-center space-y-2.5">
+              <div className="text-[13.5px] font-semibold text-[#14191F]">
+                No flights match your current filters
+              </div>
+              <p className="text-[12px] text-[#7B828A]">
+                Try widening your departure/arrival time window or allowing 1 stop.
+              </p>
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0E2034] text-[12px] font-medium cursor-pointer"
+                style={{ color: '#FFFFFF' }}
+              >
+                <span>Reset all filters</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {visibleFlights.map((flt) => (
               <motion.button
                 key={flt.id}
                 type="button"
@@ -524,7 +976,8 @@ export const FlightSearchWidget: React.FC<FlightSearchWidgetProps> = ({
                 </div>
               </motion.button>
             ))}
-          </div>
+            </div>
+          )
         ) : (
           /* Step 3: Fare Class Selection */
           <div className="space-y-4">
