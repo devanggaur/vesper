@@ -9,7 +9,6 @@ import {
   Sparkles,
   Share2,
   Eye,
-  X,
   ArrowRight,
 } from 'lucide-react';
 import {
@@ -250,12 +249,33 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [sheetTarget, setSheetTarget] = useState<EditorialSheetTarget | null>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [tripBadgePulse, setTripBadgePulse] = useState(false);
+
+  // Respect manual Map switch after auto-opening My Trip on first added stop; nudge Organize once per batch
+  const userPinnedMapRef = useRef(false);
+  const hasNudgedOrganizeRef = useRef(false);
 
   // Ask Vesper conversation stream state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [thinkingLabel, setThinkingLabel] = useState<string | null>(null);
   const [statusStep, setStatusStep] = useState<string | null>(null);
+
+  const handleUpdateDates = (nextDates: string) => {
+    setDatesLabel(nextDates);
+    if (liveTripId) {
+      travelApi.updateTripMeta(liveTripId, { datesLabel: nextDates }).catch(() => {});
+    }
+    onNotify(`Updated dates to ${nextDates}`);
+  };
+
+  const handleUpdateTravelers = (nextTravelers: string) => {
+    setTravelersLabel(nextTravelers);
+    if (liveTripId) {
+      travelApi.updateTripMeta(liveTripId, { travelers: nextTravelers }).catch(() => {});
+    }
+    onNotify(`Updated travelers to ${nextTravelers}`);
+  };
 
   /** Summons an interactive Boutique Stays or Round-Trip Flights widget directly inside the left stream. */
   const summonBookingWidget = (kind: 'stays' | 'flights', town?: string | null) => {
@@ -360,6 +380,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               ]);
             } else if (existingTripSlug && (items || []).length > 0) {
               setActiveTab('timeline');
+            }
+            if ((items || []).length > 0) {
+              setRightPanel('trip');
             }
           } else {
             setTasteCalibrated(false);
@@ -624,7 +647,46 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     ];
     setSavedItems(next);
     persistItems(next);
-    onNotify(`Added ${place.name} to Timeline`);
+    onNotify(`Added ${place.name} to My Trip`);
+
+    // Auto-switch right pane from Map -> My Trip so the shortlist visibly grows as you add stops
+    // (respects manual user choice if they deliberately pinned back to Map)
+    if (!userPinnedMapRef.current) {
+      setRightPanel('trip');
+    } else {
+      setTripBadgePulse(true);
+      window.setTimeout(() => setTripBadgePulse(false), 700);
+    }
+
+    // Gentle, one-time proactive Vesper nudge once the user has shortlisted 3+ unscheduled stops
+    const unscheduledCount = next.filter(
+      (i) => (i.type === 'place' || i.type === 'activity') && (!i.day || i.day === 'Any time')
+    ).length;
+    if (unscheduledCount >= 3 && !hasNudgedOrganizeRef.current) {
+      hasNudgedOrganizeRef.current = true;
+      window.setTimeout(() => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `nudge-org-${Date.now()}`,
+            role: 'assistant',
+            blocks: [
+              {
+                type: 'text',
+                content: `You’ve shortlisted **${unscheduledCount} great spots** in **${destination}**—want me to organize them into a smooth day-by-day route by neighborhood and opening hours?`,
+              },
+              {
+                type: 'suggestions',
+                items: [
+                  `Organize my ${destination} itinerary into days`,
+                  'Keep adding more spots first',
+                ],
+              },
+            ],
+          },
+        ]);
+      }, 420);
+    }
   };
 
   const handleUpdateItemBookingStatus = (
@@ -834,6 +896,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setTasteCalibrated(true);
     setSheetTarget(null);
     setActiveTab('timeline');
+    userPinnedMapRef.current = false;
     setRightPanel('trip');
     setMobileView('trip');
 
@@ -841,10 +904,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       setMessages((prev) => [...prev, { id: `org-u-${Date.now()}`, role: 'user', text: userPrompt }]);
     }
 
-    // Seed top discovered highlights if the user clicks auto-route before saving places manually
+    // Seed top discovered highlights ONLY if the user clicks auto-route from a completely empty shortlist
     let working = [...savedItems];
     const stopCount = working.filter((i) => i.type === 'place' || i.type === 'activity').length;
-    if (stopCount < 4 && places.length > 0) {
+    if (stopCount === 0 && places.length > 0) {
       const existing = new Set(working.map((i) => i.refId));
       const seedPlaces = places
         .filter((p) => !existing.has(p.id))
@@ -897,6 +960,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         setSavedItems(res.items);
         setIsOrganizing(false);
         setStatusStep(null);
+        hasNudgedOrganizeRef.current = false;
         setMessages((prev) => [...prev, res.assistantMessage]);
         return;
       }
@@ -937,6 +1001,25 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     // Fast-path explicit auto-route trigger
     if (lower.includes('auto-route') || lower.includes('organize my')) {
       runOrganizeItinerary(text);
+      return;
+    }
+
+    // Gentle acknowledgement if user dismisses the 3-stop organize nudge
+    if (lower.includes('keep adding more spots')) {
+      setMessages((prev) => [
+        ...prev,
+        { id: `u-${Date.now()}`, role: 'user', text },
+        {
+          id: `a-keep-${Date.now() + 1}`,
+          role: 'assistant',
+          blocks: [
+            {
+              type: 'text',
+              content: `Take your time—tap **+** on anything that catches your eye (or ask me for hidden spots in **${destination}**), and click **Organize my itinerary** whenever you’re ready.`,
+            },
+          ],
+        },
+      ]);
       return;
     }
 
@@ -1332,20 +1415,36 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onSelectHotel={(h) => setSheetTarget({ kind: 'hotel', item: h })}
               />
 
-              {/* Floating Top-Right `My Trip` Pill (Desktop, aligned with Day filter & clear of zoom controls) */}
+              {/* Floating Top-Right Segmented `My Trip | Map` Toggle (Desktop, aligned with Day filter & clear of zoom controls) */}
               {rightPanel === 'map' && !sheetTarget && (
                 <div className="hidden lg:flex absolute top-[26px] right-[72px] z-20 items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRightPanel('trip')}
-                    className="inline-flex items-center gap-2 pl-3.5 pr-2.5 py-1.5 rounded-full bg-[#FAF9F5]/95 hover:bg-white backdrop-blur-md border border-black/[0.11] shadow-[0_8px_24px_rgba(14,32,52,0.14)] text-[12.5px] font-semibold text-[#14191F] transition-all active:scale-[0.98] cursor-pointer"
+                  <div
+                    className={`inline-flex items-center p-1 rounded-full bg-[#FAF9F5]/95 backdrop-blur-md border border-black/[0.11] shadow-[0_8px_24px_rgba(14,32,52,0.14)] transition-all ${
+                      tripBadgePulse ? 'scale-105 ring-2 ring-[#C85A17]/50' : ''
+                    }`}
                   >
-                    <CalendarDays className="w-3.5 h-3.5 text-[#C85A17]" />
-                    <span>My Trip</span>
-                    <span className="font-tabular min-w-[20px] h-[20px] px-1.5 rounded-full bg-[#0E2034] text-white text-[11px] font-semibold flex items-center justify-center">
-                      {savedItems.length}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        userPinnedMapRef.current = false;
+                        setRightPanel('trip');
+                      }}
+                      className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 rounded-full hover:bg-black/[0.05] text-[12px] font-semibold text-[#14191F] transition-colors cursor-pointer"
+                    >
+                      <CalendarDays className="w-3.5 h-3.5 text-[#C85A17]" />
+                      <span>My Trip</span>
+                      <span className="font-tabular min-w-[19px] h-[19px] px-1 rounded-full bg-[#0E2034] text-white text-[10.5px] font-semibold flex items-center justify-center">
+                        {savedItems.length}
+                      </span>
+                    </button>
+                    <span
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#0E2034] text-[12px] font-semibold shadow-2xs"
+                      style={{ color: '#FFFFFF' }}
+                    >
+                      <MapIcon className="w-3.5 h-3.5" />
+                      <span>Map</span>
                     </span>
-                  </button>
+                  </div>
                   {totalCost > 0 && (
                     <button
                       type="button"
@@ -1378,7 +1477,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                         : 'flex lg:hidden'
                   } absolute inset-0 z-20 flex-col bg-[#F7F6F1] overflow-hidden`}
                 >
-                  {/* Drawer Header */}
+                  {/* Drawer Header with Persistent `My Trip | Map` Segmented Toggle */}
                   <div className="shrink-0 h-[56px] px-4 sm:px-6 flex items-center justify-between gap-2 border-b border-black/[0.07] bg-[#F7F6F1]">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span className="font-editorial text-[20px] font-medium text-[#14191F] truncate">
@@ -1393,27 +1492,37 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                         <button
                           type="button"
                           onClick={() => setShowBookingModal(true)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] font-tabular text-[12px] font-semibold cursor-pointer shadow-2xs"
+                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] font-tabular text-[12px] font-semibold cursor-pointer shadow-2xs"
                           style={{ color: '#FFFFFF' }}
                         >
                           <span>Continue · ${totalCost.toLocaleString()}</span>
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRightPanel('map');
-                          if (mobileView === 'trip') setMobileView('map');
-                        }}
-                        aria-label="Back to live map"
-                        title="Show live map"
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white hover:bg-[#FAF9F5] border border-black/[0.09] text-[12px] font-medium text-[#2C333A] cursor-pointer"
-                      >
-                        <MapIcon className="w-3.5 h-3.5 text-[#5A626A]" />
-                        <span className="hidden sm:inline">Map</span>
-                        <X className="w-3.5 h-3.5 text-[#5A626A]" />
-                      </button>
+                      {/* Segmented `My Trip | Map` Toggle */}
+                      <div className="inline-flex items-center p-0.5 rounded-full bg-[#ECEAE2] border border-black/[0.07]">
+                        <span
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0E2034] text-[11.5px] font-semibold shadow-2xs"
+                          style={{ color: '#FFFFFF' }}
+                        >
+                          <CalendarDays className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">My Trip</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            userPinnedMapRef.current = true;
+                            setRightPanel('map');
+                            if (mobileView === 'trip') setMobileView('map');
+                          }}
+                          aria-label="Show live map"
+                          title="Show live map"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full hover:bg-white/70 text-[11.5px] font-medium text-[#2C333A] transition-colors cursor-pointer"
+                        >
+                          <MapIcon className="w-3.5 h-3.5 text-[#5A626A]" />
+                          <span>Map</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1437,6 +1546,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                       isOrganizing={isOrganizing}
                       onVote={showGroupCollab ? handleCollabVote : undefined}
                       onOpenShareModal={() => setShowShareModal(true)}
+                      onUpdateDates={handleUpdateDates}
+                      onUpdateTravelers={handleUpdateTravelers}
                       onSearchFlights={() => summonBookingWidget('flights')}
                       onSearchHotels={(town) => summonBookingWidget('stays', town)}
                       onOrganizeItinerary={() =>

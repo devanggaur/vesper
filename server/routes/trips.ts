@@ -853,6 +853,29 @@ tripsRoutes.put('/:id/items', async (c) => {
   return c.json({ items: saved });
 });
 
+/** PATCH /api/trips/:id/meta — Updates editable trip dates and travelers from the My Trip header. */
+tripsRoutes.patch('/:id/meta', async (c) => {
+  const id = c.req.param('id');
+  const trip = await store.getTrip(id);
+  if (!trip) return c.json({ error: 'Trip not found' }, 404);
+  const { isOwner } = await resolveTripOwnership(trip, c.req.header('Authorization'));
+  if (!isOwner) {
+    return c.json({ error: 'Only the trip organizer can update trip details.' }, 403);
+  }
+  const body = (await c.req.json()) as { datesLabel?: string; travelers?: string };
+  const patch: Record<string, unknown> = {};
+  if (typeof body.datesLabel === 'string' && body.datesLabel.trim()) {
+    patch.dates_label = body.datesLabel.trim();
+  }
+  if (typeof body.travelers === 'string' && body.travelers.trim()) {
+    patch.travelers = body.travelers.trim();
+  }
+  if (Object.keys(patch).length > 0) {
+    await store.updateTrip(id, patch);
+  }
+  return c.json({ ok: true, datesLabel: patch.dates_label ?? trip.dates_label, travelers: patch.travelers ?? trip.travelers });
+});
+
 /**
  * POST /api/trips/:id/organize
  * Uses Gemini to cluster the user's saved stops spatially across days & chronological times.
@@ -869,14 +892,101 @@ tripsRoutes.post('/:id/organize', async (c) => {
   const body = (await c.req.json()) as { items: TripSavedItem[] };
   const workingItems = body.items || [];
 
-  const result = await organizeStopsWithGemini(trip.destination, trip.day_labels, workingItems);
+  const hasUnscheduled = workingItems.some(
+    (i) => (i.type === 'place' || i.type === 'activity') && (!i.day || i.day === 'Any time')
+  );
 
-  const assignmentMap = new Map(result.assignments.map((a) => [a.itemId, a]));
-  const updatedItems: TripSavedItem[] = workingItems.map((item) => {
-    const hit = assignmentMap.get(item.id);
-    if (!hit) return item;
-    return { ...item, day: hit.day, time: hit.time };
-  });
+  let updatedItems: TripSavedItem[] = workingItems;
+  let summaryIntro = `Organized your ${trip.destination} stops into a smooth day-by-day route.`;
+  let summaryBullets: string[] = [];
+  let summaryOutro = 'Open **Map** to inspect your color-coded daily routes and transit times.';
+  let suggestions: string[] = [
+    `Find boutique stays in ${trip.destination}`,
+    'View my routed days on Map',
+  ];
+
+  try {
+    const result = await organizeStopsWithGemini(trip.destination, trip.day_labels, workingItems);
+    const assignmentMap = new Map(result.assignments.map((a) => [a.itemId, a]));
+    updatedItems = workingItems.map((item) => {
+      const isPinnedAnchor =
+        hasUnscheduled &&
+        (item.type === 'place' || item.type === 'activity') &&
+        Boolean(item.day && item.day !== 'Any time' && item.time);
+      if (isPinnedAnchor) return item;
+      const hit = assignmentMap.get(item.id);
+      if (!hit) return item;
+      return { ...item, day: hit.day, time: hit.time };
+    });
+    summaryIntro = result.summaryIntro || summaryIntro;
+    summaryBullets = result.summaryBullets || [];
+    summaryOutro = result.summaryOutro || summaryOutro;
+    if (result.suggestions?.length) suggestions = result.suggestions.slice(0, 3);
+  } catch (err) {
+    console.warn('[vesper] organizeStopsWithGemini fallback:', (err as Error)?.message?.slice(0, 140));
+    // Deterministic coordinate-aware spatial clustering fallback (respects manually pinned anchors!)
+    const validDays = trip.day_labels.length > 0 ? trip.day_labels : [{ key: 'Day 1', short: 'Day 1', themeLabel: 'Highlights', dotColor: '#C85A17' }];
+    const dayCounts = new Map<string, number>(validDays.map((d) => [d.key, 0]));
+    const pinnedSet = new Set<string>();
+
+    for (const item of workingItems) {
+      if (
+        hasUnscheduled &&
+        (item.type === 'place' || item.type === 'activity') &&
+        item.day &&
+        item.day !== 'Any time' &&
+        item.time
+      ) {
+        pinnedSet.add(item.id);
+        dayCounts.set(item.day, (dayCounts.get(item.day) || 0) + 1);
+      }
+    }
+
+    // Sort unpinned stops spatially by latitude/longitude so nearby stops cluster onto the same day
+    const toRoute = workingItems
+      .filter((i) => (i.type === 'place' || i.type === 'activity') && !pinnedSet.has(i.id))
+      .sort((a, b) => {
+        const scoreA = (a.coords?.lat || 0) + (a.coords?.lng || 0);
+        const scoreB = (b.coords?.lat || 0) + (b.coords?.lng || 0);
+        return scoreA - scoreB;
+      });
+
+    const foodSlots = ['1:00 PM', '7:30 PM', '12:30 PM', '8:00 PM'];
+    const sightSlots = ['10:00 AM', '2:30 PM', '4:30 PM', '11:30 AM'];
+    const routedMap = new Map<string, { day: string; time: string }>();
+
+    toRoute.forEach((item, idx) => {
+      // Pick the least-loaded day so stops spread evenly while respecting pinned anchors
+      const chosenDay =
+        [...validDays].sort((a, b) => (dayCounts.get(a.key) || 0) - (dayCounts.get(b.key) || 0))[0]
+          ?.key || validDays[0].key;
+      const countOnDay = dayCounts.get(chosenDay) || 0;
+      dayCounts.set(chosenDay, countOnDay + 1);
+      const isFood =
+        item.bookingMeta?.bookingType === 'reservation' ||
+        /restaurant|cafe|café|coffee|bar|bistro|ramen|sushi|dining|bakery/i.test(
+          `${item.title} ${item.subtitle || ''}`
+        );
+      const time = isFood
+        ? foodSlots[(countOnDay + idx) % foodSlots.length]
+        : sightSlots[countOnDay % sightSlots.length];
+      routedMap.set(item.id, { day: chosenDay, time });
+    });
+
+    updatedItems = workingItems.map((item) => {
+      const assigned = routedMap.get(item.id);
+      return assigned ? { ...item, day: assigned.day, time: assigned.time } : item;
+    });
+
+    summaryBullets = validDays
+      .map((d) => {
+        const dayTitles = updatedItems
+          .filter((i) => (i.type === 'place' || i.type === 'activity') && i.day === d.key)
+          .map((i) => i.title);
+        return dayTitles.length > 0 ? `**${d.key}:** ${dayTitles.join(' → ')}` : '';
+      })
+      .filter(Boolean);
+  }
 
   await store.replaceTripItems(trip.id, updatedItems);
 
@@ -886,11 +996,11 @@ tripsRoutes.post('/:id/organize', async (c) => {
     blocks: [
       {
         type: 'bullets',
-        intro: result.summaryIntro,
-        items: result.summaryBullets,
-        outro: result.summaryOutro,
+        intro: summaryIntro,
+        items: summaryBullets,
+        outro: summaryOutro,
       },
-      { type: 'suggestions', items: result.suggestions.slice(0, 3) },
+      { type: 'suggestions', items: suggestions.slice(0, 3) },
     ],
   };
   await store.appendMessages(trip.id, [assistantMsg]);

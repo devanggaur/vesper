@@ -355,6 +355,16 @@ export const travelApi = {
     return res.items;
   },
 
+  async updateTripMeta(
+    tripId: string,
+    patch: { datesLabel?: string; travelers?: string }
+  ): Promise<{ ok: boolean; datesLabel: string; travelers: string }> {
+    return apiFetch(`/api/trips/${encodeURIComponent(tripId)}/meta`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  },
+
   async organizeTrip(
     tripId: string,
     items: TripSavedItem[]

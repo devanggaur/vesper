@@ -490,10 +490,10 @@ class VesperStore {
           hotel_details: item.hotelDetails ?? null,
           booking_meta: item.bookingMeta ?? null,
         }));
-        const { error } = await this.client!.from('trip_items').insert(rows);
+        const { error } = await this.client!.from('trip_items').upsert(rows);
         if (error && error.message?.includes('booking_meta')) {
           const fallbackRows = rows.map(({ booking_meta: _ignored, ...rest }) => rest);
-          const retry = await this.client!.from('trip_items').insert(fallbackRows);
+          const retry = await this.client!.from('trip_items').upsert(fallbackRows);
           if (retry.error) console.warn('[vesper-store] replaceTripItems retry error:', retry.error.message);
         } else if (error) {
           console.warn('[vesper-store] replaceTripItems error:', error.message);

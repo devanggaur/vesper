@@ -524,7 +524,7 @@ export async function buildDiscoverBlueprint(
       `Destination: ${destination}${country ? `, ${country}` : ''}\nDates: ${datesLabel}\nTravelers: ${taste.travelers}\nVibes: ${taste.vibes.join(', ')}\nPace: ${taste.pace}\nSplurge style: ${taste.splurge}${roadTripPromptBlock}${hotelLoyaltyNote}`,
       systemInstruction,
       schema,
-      { enableSearchGrounding: true, timeoutMs: 25000, models: config.geminiChatModels }
+      { enableSearchGrounding: true, timeoutMs: 11000, models: config.geminiChatModels }
     );
   } catch (err) {
     console.warn('[gemini] buildDiscoverBlueprint using deterministic Google Places fallback:', (err as Error)?.message);
@@ -628,9 +628,12 @@ export async function organizeStopsWithGemini(
     required: ['assignments', 'summaryIntro', 'summaryBullets', 'summaryOutro', 'suggestions'],
   };
 
-  const compactStops = items
-    .filter((i) => i.type === 'place' || i.type === 'activity')
-    .map((i) => ({
+  const stopList = items.filter((i) => i.type === 'place' || i.type === 'activity');
+  const hasUnscheduled = stopList.some((i) => !i.day || i.day === 'Any time');
+
+  const compactStops = stopList.map((i) => {
+    const locked = Boolean(hasUnscheduled && i.day && i.day !== 'Any time' && i.time);
+    return {
       itemId: i.id,
       title: i.title,
       type: i.type,
@@ -638,11 +641,13 @@ export async function organizeStopsWithGemini(
       coords: i.coords,
       currentDay: i.day,
       currentTime: i.time || null,
-    }));
+      locked,
+    };
+  });
 
   return runStructuredJson<OrganizedScheduleResult>(
     `Destination: ${destination}\nAvailable days:\n${days.map((d) => `- "${d.key}" (${d.themeLabel})`).join('\n')}\n\nStops to route:\n${JSON.stringify(compactStops, null, 2)}`,
-    'You are Vesper, a spatial travel router. Group nearby stops (using coordinates and neighborhood) onto the same day to minimize transit time. Put museums/parks/tours in the morning/afternoon and restaurants at lunch (12:30–2:00 PM) or dinner (7:00–8:30 PM). Every stop MUST receive a valid day key from the list and a 12-hour time string.',
+    'You are Vesper, a spatial travel router. Group nearby stops (using coordinates and neighborhood) onto the same day to minimize transit time. CRITICAL: Any stop with "locked": true was manually pinned by the traveler—keep its exact currentDay and currentTime unchanged and route all other stops smoothly around it. Put museums/parks/tours in the morning/afternoon and restaurants at lunch (12:30–2:00 PM) or dinner (7:00–8:30 PM). Every stop MUST receive a valid day key from the list and a 12-hour time string.',
     schema
   );
 }
