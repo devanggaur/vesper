@@ -87,7 +87,6 @@ export function renderRichChatContent(
           const isLastLine = isLastBlock && lIdx === lines.length - 1;
           if (/^[-*•]\s+/.test(line)) {
             bulletGroup.push(line.replace(/^[-*•]\s+/, ''));
-            if (isLastLine) flushBullets(`b-${blockIdx}-${lIdx}`, true);
           } else {
             flushBullets(`b-${blockIdx}-${lIdx}`, false);
             elements.push(
@@ -98,6 +97,7 @@ export function renderRichChatContent(
             );
           }
         });
+        flushBullets(`b-${blockIdx}-end`, isLastBlock);
 
         return (
           <div key={blockIdx} className="space-y-2">
