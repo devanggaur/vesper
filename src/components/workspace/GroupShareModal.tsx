@@ -271,7 +271,7 @@ export const GroupShareModal: React.FC<GroupShareModalProps> = ({
                 className="w-full py-2 px-3 rounded-xl bg-white hover:bg-[#FAF9F5] border border-black/[0.09] text-[12px] font-medium text-[#2C333A] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Eye className="w-3.5 h-3.5 text-[#5A626A]" />
-                <span>Preview guest view (Full width vs. Group rail)</span>
+                <span>Preview guest view</span>
               </button>
             )}
           </div>

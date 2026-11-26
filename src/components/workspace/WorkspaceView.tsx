@@ -11,8 +11,6 @@ import {
   Loader2,
   Share2,
   Eye,
-  Columns2,
-  Maximize2,
   ArrowRight,
 } from 'lucide-react';
 import {
@@ -46,7 +44,6 @@ import { InteractiveMap } from './InteractiveMap';
 import { ContextualEditorialSheet, EditorialSheetTarget } from './ContextualEditorialSheet';
 import { BookingCheckoutModal } from './BookingCheckoutModal';
 import { CoPilotRail } from './CoPilotRail';
-import { GroupActivityRail } from './GroupActivityRail';
 import { CollabNamePromptModal, GroupShareModal } from './GroupShareModal';
 
 export type CanvasTab = 'discover' | 'timeline' | 'map' | 'bookings';
@@ -151,10 +148,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       ? new URLSearchParams(window.location.search).get('preview') === 'guest'
       : false
   );
-  const [guestLayout, setGuestLayout] = useState<'full' | 'rail'>('rail');
 
   const canEdit = isTripOwner && !previewingAsGuest;
-  const showRightRail = canEdit || guestLayout === 'rail';
 
   // Trip items & interaction state
   const [savedItems, setSavedItems] = useState<TripSavedItem[]>([]);
@@ -1068,36 +1063,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     },
   ];
 
-  const handleInspectCollabEntity = (entityId: string, kind: CollabEntityKind) => {
-    if (kind === 'hotel') {
-      const h = hotels.find((x) => x.id === entityId);
-      if (h) {
-        setSheetTarget({ kind: 'hotel', item: h });
-        return;
-      }
-      setActiveTab('bookings');
-      setBookingsSubTab('stays');
-      return;
-    }
-    if (kind === 'activity') {
-      const a = activities.find((x) => x.id === entityId);
-      if (a) {
-        setSheetTarget({ kind: 'activity', item: a });
-        return;
-      }
-    }
-    const p = places.find((x) => x.id === entityId);
-    if (p) {
-      setSheetTarget({ kind: 'place', item: p });
-    }
-  };
-
   return (
     <div className="relative h-dvh w-full flex overflow-hidden bg-[#F7F6F1]">
-      {/* ── LEFT 66% (or 100% in Guest Full-Width Mode): LIVING TRIP CANVAS ─ */}
+      {/* ── LEFT 66% (Organizer) or 100% Full-Width (Shared Guest Viewer): LIVING TRIP CANVAS ─ */}
       <div
         className={`flex-1 ${
-          showRightRail ? 'lg:w-[66%] lg:flex-none' : 'lg:w-full'
+          canEdit ? 'lg:w-[66%] lg:flex-none' : 'lg:w-full'
         } h-full flex flex-col min-w-0 relative`}
       >
         {/* Top Workspace Navigation Bar */}
@@ -1195,7 +1166,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           </div>
         </header>
 
-        {/* Shared Guest Viewer Banner + 2-Way Layout Toggle (Full Width vs. Group Rail) */}
+        {/* Shared Guest Viewer Banner (Full-Width Read-Only Mode) */}
         {!canEdit && (
           <div className="shrink-0 px-3.5 sm:px-6 py-2 bg-[#ECEAE2]/90 border-b border-black/[0.07] flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 text-[12px] text-[#2C333A] min-w-0">
@@ -1218,40 +1189,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {/* Desktop 2-Way Layout Switcher so you can compare Full Width vs. Group Rail */}
-              <div
-                className="hidden lg:inline-flex items-center rounded-full p-0.5 bg-white border border-black/[0.09]"
-                role="group"
-                aria-label="Guest layout switcher"
-              >
-                <button
-                  type="button"
-                  onClick={() => setGuestLayout('full')}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
-                    guestLayout === 'full'
-                      ? 'bg-[#0E2034] text-white'
-                      : 'text-[#5A626A] hover:text-[#14191F]'
-                  }`}
-                  style={guestLayout === 'full' ? { color: '#FFFFFF' } : undefined}
-                >
-                  <Maximize2 className="w-3 h-3" />
-                  <span>Full width</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGuestLayout('rail')}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
-                    guestLayout === 'rail'
-                      ? 'bg-[#0E2034] text-white'
-                      : 'text-[#5A626A] hover:text-[#14191F]'
-                  }`}
-                  style={guestLayout === 'rail' ? { color: '#FFFFFF' } : undefined}
-                >
-                  <Columns2 className="w-3 h-3" />
-                  <span>Group rail</span>
-                </button>
-              </div>
-
               {previewingAsGuest ? (
                 <button
                   type="button"
@@ -1590,31 +1527,17 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         )}
       </div>
 
-      {/* ── RIGHT 34% (Desktop): CO-PILOT (Organizer) OR GROUP RAIL (Guest) ─ */}
-      {showRightRail && (
+      {/* ── RIGHT 34% (Desktop, Organizer only): LIVE CO-PILOT RAIL ─────── */}
+      {canEdit && (
         <aside className="hidden lg:block lg:w-[34%] h-full border-l border-black/[0.08] shrink-0">
-          {canEdit ? (
-            <CoPilotRail
-              messages={messages}
-              streamingText={streamingText}
-              thinkingLabel={thinkingLabel}
-              statusStep={statusStep}
-              sheetTarget={sheetTarget}
-              onSend={handleCoPilotSend}
-            />
-          ) : (
-            <GroupActivityRail
-              destination={destination}
-              ownerName={ownerName}
-              votes={votes}
-              notes={notes}
-              hotels={hotels}
-              places={places}
-              activities={activities}
-              onInspectEntity={handleInspectCollabEntity}
-              onPlanOwnTrip={onGoHome}
-            />
-          )}
+          <CoPilotRail
+            messages={messages}
+            streamingText={streamingText}
+            thinkingLabel={thinkingLabel}
+            statusStep={statusStep}
+            sheetTarget={sheetTarget}
+            onSend={handleCoPilotSend}
+          />
         </aside>
       )}
 
