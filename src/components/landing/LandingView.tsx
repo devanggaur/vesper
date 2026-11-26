@@ -39,7 +39,8 @@ interface LandingViewProps {
     prompt: string,
     focusMode?: 'flights' | 'stays' | 'activities',
     datesSummary?: string,
-    travelers?: string
+    travelers?: string,
+    destinationHint?: string
   ) => void;
   onOpenSidebar: () => void;
   onOpenAuth: () => void;
@@ -98,7 +99,9 @@ export const LandingView: React.FC<LandingViewProps> = ({
     <button
       key={`${dest.id}-${keySuffix}`}
       type="button"
-      onClick={() => onStartTrip(dest.prompt, undefined, dateSelection.label, guestsLabel)}
+      onClick={() =>
+        onStartTrip(dest.prompt, undefined, dateSelection.label, guestsLabel, dest.name)
+      }
       className={`group relative ${
         dest.wide ? 'w-[240px] sm:w-[278px]' : 'w-[190px] sm:w-[220px]'
       } h-[142px] sm:h-[168px] rounded-[18px] overflow-hidden shrink-0 text-left shadow-[0_6px_22px_rgba(14,32,52,0.09)] border border-black/[0.06] cursor-pointer transition-transform duration-300 hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-[#0E2034]`}

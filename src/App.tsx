@@ -59,6 +59,7 @@ export function App() {
   );
   const [initialDates, setInitialDates] = useState(() => getDefaultTripDateSelection().label);
   const [initialTravelers, setInitialTravelers] = useState('2 adults');
+  const [initialDestinationHint, setInitialDestinationHint] = useState<string | undefined>(undefined);
   const [focusMode, setFocusMode] = useState<'flights' | 'stays' | 'activities' | undefined>(
     undefined
   );
@@ -239,12 +240,14 @@ export function App() {
     prompt: string,
     mode?: 'flights' | 'stays' | 'activities',
     datesSummary?: string,
-    travelers?: string
+    travelers?: string,
+    destinationHint?: string
   ) => {
     setSelectedTripId(undefined);
     setSelectedTripSlug(undefined);
     activeTripIdRef.current = null;
     setInitialPrompt(prompt);
+    setInitialDestinationHint(destinationHint);
     setFocusMode(mode);
     if (datesSummary) setInitialDates(datesSummary);
     if (travelers) setInitialTravelers(travelers);
@@ -340,6 +343,7 @@ export function App() {
               tripId={selectedTripId}
               tripSlug={selectedTripSlug}
               initialPrompt={initialPrompt}
+              initialDestinationHint={initialDestinationHint}
               initialDates={initialDates}
               initialTravelers={initialTravelers}
               initialFocusMode={focusMode}

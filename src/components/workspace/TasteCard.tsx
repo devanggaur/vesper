@@ -225,7 +225,7 @@ export const TasteCard: React.FC<TasteCardProps> = ({
             </span>
           </div>
           <h2 className="font-editorial text-[28px] sm:text-[34px] font-normal text-[#14191F] leading-tight">
-            How should {destination} feel?
+            {destination ? `How should ${destination} feel?` : 'How should your trip feel?'}
           </h2>
         </div>
 

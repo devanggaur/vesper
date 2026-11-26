@@ -34,6 +34,7 @@ import {
 } from '../../types/travel';
 import { DEFAULT_CDMX_DAYS, travelApi } from '../../services/travelApi';
 import { inferActivityBookingType, inferPlaceBookingType } from '../../utils/bookingHelpers';
+import { extractQuickDestination } from '../../utils/destinationParser';
 import { BrandMark } from '../common/BrandMark';
 import { TasteCard, TasteProfile } from './TasteCard';
 import { ActivityCarousel, PlaceCarousel } from './DiscoverCarousels';
@@ -51,6 +52,7 @@ interface WorkspaceViewProps {
   tripId?: string;
   tripSlug?: string;
   initialPrompt: string;
+  initialDestinationHint?: string;
   initialDates?: string;
   initialTravelers?: string;
   initialFocusMode?: 'flights' | 'stays' | 'activities';
@@ -81,6 +83,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   tripId: existingTripId,
   tripSlug: existingTripSlug,
   initialPrompt,
+  initialDestinationHint,
   initialDates = 'Fri, Jun 19 – Sun, Jun 21',
   initialTravelers = '2 adults',
   initialFocusMode,
@@ -105,7 +108,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   const [liveTripId, setLiveTripId] = useState<string | null>(existingTripId || null);
   const [liveTripSlug, setLiveTripSlug] = useState<string | null>(existingTripSlug || null);
   const [tripTitle, setTripTitle] = useState(DEFAULT_TRIP_TITLE);
-  const [destination, setDestination] = useState('your destination');
+  const [destination, setDestination] = useState(() =>
+    existingTripId || existingTripSlug
+      ? ''
+      : initialDestinationHint || extractQuickDestination(initialPrompt)
+  );
   const [datesLabel, setDatesLabel] = useState(initialDates);
   const [travelersLabel, setTravelersLabel] = useState(initialTravelers);
   const [days, setDays] = useState<TripDayMeta[]>(DEFAULT_CDMX_DAYS);
