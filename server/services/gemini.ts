@@ -12,6 +12,7 @@ import type { TripDayRecord } from './supabase';
  */
 
 const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
+const aiBeta = new GoogleGenAI({ apiKey: config.geminiApiKey, apiVersion: 'v1beta' });
 
 /** Short-circuit models that recently hit 429 rate-limit backoff or timed out (30-minute cooldown). */
 const MODEL_COOLDOWN_MS = 30 * 60 * 1000;
@@ -1061,12 +1062,12 @@ export async function transcribeVoiceAudio(
     }
     try {
       const interaction = await withTimeout(
-        ai.interactions.create({
+        aiBeta.interactions.create({
           model,
           input: [
             {
               type: 'text',
-              text: 'Transcribe this spoken travel request accurately into clean, natural text. Fix punctuation and destination/restaurant spellings (e.g., Oaxaca, Kyoto, Chiado, Lisbon, Amalfi). Return ONLY the transcribed request with no quotes, labels, or extra commentary. If no speech is audible, return an empty string.',
+              text: 'Transcribe the spoken audio verbatim into clean text with proper punctuation and accurate place-name spelling. Return ONLY the exact words spoken. If the audio is silent, noise-only, or has no intelligible human speech, return an empty string—never invent or guess text.',
             },
             {
               type: 'audio',
