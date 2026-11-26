@@ -13,6 +13,27 @@ import type { TripDayRecord } from './supabase';
 
 const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
 
+/** Short-circuit models that recently hit 429 rate-limit backoff or timed out (5-minute cooldown). */
+const MODEL_COOLDOWN_MS = 5 * 60 * 1000;
+const modelCooldownUntil = new Map<string, number>();
+
+function isModelCoolingDown(model: string): boolean {
+  const until = modelCooldownUntil.get(model);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    modelCooldownUntil.delete(model);
+    return false;
+  }
+  return true;
+}
+
+function markModelCooldown(model: string, err: unknown): void {
+  const msg = (err as Error)?.message || '';
+  if (/429|rate limit|quota|timed out|404/i.test(msg)) {
+    modelCooldownUntil.set(model, Date.now() + MODEL_COOLDOWN_MS);
+  }
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
@@ -40,6 +61,7 @@ async function runStructuredJson<T>(
   const modelList = options?.models ?? config.geminiModels;
 
   for (const model of modelList) {
+    if (isModelCoolingDown(model) && model !== modelList[modelList.length - 1]) continue;
     try {
       const interaction = await withTimeout(
         ai.interactions.create({
@@ -67,6 +89,7 @@ async function runStructuredJson<T>(
       return JSON.parse(cleaned) as T;
     } catch (err) {
       lastError = err;
+      markModelCooldown(model, err);
       console.warn(`[gemini] model ${model} failed, trying fallback:`, (err as Error)?.message?.slice(0, 140));
     }
   }
@@ -831,6 +854,12 @@ Where:
   let lastError: unknown;
 
   for (const model of config.geminiChatModels) {
+    if (
+      isModelCoolingDown(model) &&
+      model !== config.geminiChatModels[config.geminiChatModels.length - 1]
+    ) {
+      continue;
+    }
     let rawAccumulated = '';
     let emittedLen = 0;
     let enteredMeta = false;
@@ -926,6 +955,7 @@ Where:
       return { fullText: visibleText.trim(), meta: parsedMeta };
     } catch (err) {
       lastError = err;
+      markModelCooldown(model, err);
       // Only retry next model if we haven't already streamed text to the client
       if (emittedLen > 0) break;
       console.warn(`[gemini-stream] model ${model} failed, trying fallback:`, (err as Error)?.message?.slice(0, 140));

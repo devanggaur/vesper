@@ -7,10 +7,10 @@ import {
   Map as MapIcon,
   Briefcase,
   Sparkles,
-  SlidersHorizontal,
-  Loader2,
   Share2,
   Eye,
+  X,
+  ArrowRight,
 } from 'lucide-react';
 import {
   ActivityItem,
@@ -36,15 +36,14 @@ import { DEFAULT_CDMX_DAYS, travelApi } from '../../services/travelApi';
 import { inferActivityBookingType, inferPlaceBookingType } from '../../utils/bookingHelpers';
 import { extractQuickDestination } from '../../utils/destinationParser';
 import { BrandMark } from '../common/BrandMark';
-import { TasteCard, TasteProfile } from './TasteCard';
-import { MobileChatCalibration } from './MobileChatCalibration';
+import { TasteProfile } from './TasteCard';
 import { ActivityCarousel, PlaceCarousel } from './DiscoverCarousels';
 import { CanvasTimeline } from './CanvasTimeline';
 import { CanvasBookings } from './CanvasBookings';
 import { InteractiveMap } from './InteractiveMap';
 import { ContextualEditorialSheet, EditorialSheetTarget } from './ContextualEditorialSheet';
 import { BookingCheckoutModal } from './BookingCheckoutModal';
-import { CoPilotRail } from './CoPilotRail';
+import { GenerativeStream, StreamBookingWidget } from './GenerativeStream';
 import { CollabNamePromptModal, GroupShareModal } from './GroupShareModal';
 
 export type CanvasTab = 'discover' | 'timeline' | 'map' | 'bookings';
@@ -142,6 +141,31 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     initialFocusMode === 'flights' ? 'flights' : 'stays'
   );
   const [focusedMapDay, setFocusedMapDay] = useState<string>('All');
+  const [rightPanel, setRightPanel] = useState<'map' | 'trip'>('map');
+  const [mobileView, setMobileView] = useState<'stream' | 'trip' | 'map'>('stream');
+  const [streamWidgets, setStreamWidgets] = useState<StreamBookingWidget[]>(() => {
+    if (initialFocusMode === 'stays') {
+      return [
+        {
+          id: 'init-stays',
+          kind: 'stays',
+          introText:
+            'Here are curated boutique stays with live nightly rates, neighborhood notes, and guest reviews:',
+        },
+      ];
+    }
+    if (initialFocusMode === 'flights') {
+      return [
+        {
+          id: 'init-flights',
+          kind: 'flights',
+          introText:
+            'Here are live round-trip flights you can filter by stops, airline, and departure window:',
+        },
+      ];
+    }
+    return [];
+  });
   const [tripMode, setTripMode] = useState<TripMode>(() =>
     /\b(road\s*trip|roadtrip|scenic\s+drive|driving\s+(tour|trip|loop|route|itinerary)|drive\s+from|driving\s+from|car\s+trip|campervan|rv\s+trip)\b/i.test(
       initialPrompt
@@ -227,13 +251,32 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   const [sheetTarget, setSheetTarget] = useState<EditorialSheetTarget | null>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
 
-  // Co-Pilot conversation state
-  const [mobileCopilotOpen, setMobileCopilotOpen] = useState(false);
-  const [hasUnreadCopilot, setHasUnreadCopilot] = useState(false);
+  // Ask Vesper conversation stream state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [thinkingLabel, setThinkingLabel] = useState<string | null>(null);
   const [statusStep, setStatusStep] = useState<string | null>(null);
+
+  /** Summons an interactive Boutique Stays or Round-Trip Flights widget directly inside the left stream. */
+  const summonBookingWidget = (kind: 'stays' | 'flights', town?: string | null) => {
+    setTasteCalibrated(true);
+    setSheetTarget(null);
+    setMobileView('stream');
+    if (town !== undefined) setActiveBookingsTown(town);
+    const targetName = town || destination || 'your trip';
+    const introText =
+      kind === 'stays'
+        ? `Here are top stays in **${targetName}** for **${datesLabel}**—compare nightly rates, sleep quality, and ratings right here:`
+        : `Here are live round-trip flights from **${homeAirport || 'San Francisco'}** to **${destination || 'your destination'}** for **${datesLabel}**:`;
+
+    setStreamWidgets((prev) => {
+      const existing = prev.find((w) => w.kind === kind && (kind === 'flights' || (w.town ?? null) === (town ?? null)));
+      if (existing) {
+        return [...prev.filter((w) => w.id !== existing.id), { ...existing, introText }];
+      }
+      return [...prev, { id: `${kind}-${Date.now()}`, kind, town: town ?? null, introText }];
+    });
+  };
 
   // Keep latest tripId in a ref for async handlers (e.g., if user clicks TasteCard rapidly)
   const tripCreatePromiseRef = useRef<Promise<string | null> | null>(null);
@@ -296,9 +339,25 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             if (urlViewParam === 'stays') {
               setActiveTab('bookings');
               setBookingsSubTab('stays');
+              setStreamWidgets([
+                {
+                  id: `stays-init`,
+                  kind: 'stays',
+                  town: null,
+                  introText: `Here are top stays in **${trip.destination}** for **${trip.datesLabel}**—compare nightly rates, sleep quality, and ratings right here:`,
+                },
+              ]);
             } else if (urlViewParam === 'flights') {
               setActiveTab('bookings');
               setBookingsSubTab('flights');
+              setStreamWidgets([
+                {
+                  id: `flights-init`,
+                  kind: 'flights',
+                  town: null,
+                  introText: `Here are live round-trip flights to **${trip.destination}** for **${trip.datesLabel}**:`,
+                },
+              ]);
             } else if (existingTripSlug && (items || []).length > 0) {
               setActiveTab('timeline');
             }
@@ -497,7 +556,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
         setStatusStep(null);
         setIsComposingCatalog(false);
-        setHasUnreadCopilot(true);
         setMessages((prev) => [...prev, res.assistantMessage]);
         return;
       }
@@ -508,7 +566,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     // Fallback when API server is offline
     setStatusStep(null);
     setIsComposingCatalog(false);
-    setHasUnreadCopilot(true);
     setMessages((prev) => [
       ...prev,
       {
@@ -639,6 +696,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setSavedItems(next);
     persistItems(next);
     setActiveTab('timeline');
+    setRightPanel('trip');
     onNotify(`Added ${activity.title} ($${total}) on ${day}`);
     setMessages((prev) => [
       ...prev,
@@ -704,7 +762,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     ];
     setSavedItems(next);
     persistItems(next);
+    setSheetTarget(null);
     setActiveTab('timeline');
+    setRightPanel('trip');
     onNotify(`Added ${hotel.name} ($${price}) to your trip`);
     setMessages((prev) => [
       ...prev,
@@ -750,6 +810,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setSavedItems(next);
     persistItems(next);
     setActiveTab('timeline');
+    setRightPanel('trip');
     onNotify(`Added ${outbound.airline} ${fare.name} flights ($${fare.price.toLocaleString()})`);
     setMessages((prev) => [
       ...prev,
@@ -773,6 +834,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setTasteCalibrated(true);
     setSheetTarget(null);
     setActiveTab('timeline');
+    setRightPanel('trip');
+    setMobileView('trip');
 
     if (userPrompt) {
       setMessages((prev) => [...prev, { id: `org-u-${Date.now()}`, role: 'user', text: userPrompt }]);
@@ -834,7 +897,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         setSavedItems(res.items);
         setIsOrganizing(false);
         setStatusStep(null);
-        setHasUnreadCopilot(true);
         setMessages((prev) => [...prev, res.assistantMessage]);
         return;
       }
@@ -902,23 +964,28 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       } else if (action.type === 'open_map') {
         setSheetTarget(null);
         setActiveTab('map');
+        setRightPanel('map');
+        setMobileView('map');
         setFocusedMapDay('All');
-        setMobileCopilotOpen(false);
       } else if (action.type === 'open_bookings_stays') {
-        setTasteCalibrated(true);
-        setSheetTarget(null);
+        summonBookingWidget('stays');
         setActiveTab('bookings');
         setBookingsSubTab('stays');
-        setMobileCopilotOpen(false);
       } else if (action.type === 'open_bookings_flights') {
-        setTasteCalibrated(true);
-        setSheetTarget(null);
+        summonBookingWidget('flights');
         setActiveTab('bookings');
         setBookingsSubTab('flights');
-        setMobileCopilotOpen(false);
       } else if (action.type === 'switch_tab' && action.tab) {
         setSheetTarget(null);
         setActiveTab(action.tab);
+        if (action.tab === 'timeline') {
+          setRightPanel('trip');
+        } else if (action.tab === 'map') {
+          setRightPanel('map');
+          setMobileView('map');
+        } else if (action.tab === 'bookings') {
+          summonBookingWidget('stays');
+        }
       }
     };
 
@@ -1146,110 +1213,456 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     },
   ];
 
+  const activeRoadTrip =
+    tasteProfile?.roadTrip ||
+    (roadTripDefaults
+      ? {
+          startCity: roadTripDefaults.startCity,
+          transportMode: roadTripDefaults.transportMode,
+          maxDriveHoursPerDay: '2_to_4h' as const,
+          overnightTowns: roadTripDefaults.overnightTowns,
+        }
+      : null);
+
   return (
-    <div className="relative h-dvh w-full flex overflow-hidden bg-[#F7F6F1]">
-      {/* ── LEFT 66% (Organizer) or 100% Full-Width (Shared Guest Viewer): LIVING TRIP CANVAS ─ */}
-      <div
-        className={`flex-1 ${
-          canEdit ? 'lg:w-[66%] lg:flex-none' : 'lg:w-full'
-        } h-full flex flex-col min-w-0 relative`}
-      >
-        {/* Top Workspace Navigation Bar */}
-        <header className="shrink-0 h-[56px] px-3.5 sm:px-6 flex items-center justify-between gap-2 border-b border-black/[0.06] bg-[#F7F6F1]">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <button
-              onClick={onOpenSidebar}
-              className="p-1.5 -ml-1 rounded-lg hover:bg-black/[0.05] text-[#14191F] cursor-pointer shrink-0"
-              aria-label="Open menu"
-            >
-              <Menu className="w-[18px] h-[18px]" strokeWidth={1.8} />
-            </button>
-            <button
-              type="button"
-              onClick={onGoHome}
-              title="Back to Vesper home"
-              aria-label="Return to Vesper home"
-              className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 -mx-1 hover:bg-black/[0.04] transition-colors cursor-pointer shrink-0"
-            >
-              <BrandMark size={26} className="shrink-0" />
-              <span className="font-editorial text-[20px] sm:text-[22px] font-medium text-[#14191F] leading-none">
-                Vesper
-              </span>
-            </button>
+    <div className="relative h-dvh w-full flex flex-col lg:flex-row overflow-hidden bg-[#F7F6F1]">
+      {canEdit ? (
+        /* ── ORGANIZER MODE (OPTION A): 50/50 GENERATIVE STREAM + LIVE MAP / MY TRIP ── */
+        <>
+          {/* LEFT 50% (Desktop) / TAB 1 (Mobile): UNIFIED `ASK VESPER` GENERATIVE STREAM */}
+          <div
+            className={`${
+              mobileView === 'stream' && !sheetTarget ? 'flex' : 'hidden lg:flex'
+            } flex-1 lg:flex-none lg:w-[50%] min-h-0 min-w-0 flex-col border-r border-black/[0.08] bg-[#F7F6F1]`}
+          >
+            <GenerativeStream
+              destination={destination}
+              datesLabel={datesLabel}
+              travelersLabel={travelersLabel}
+              liveTripSlug={liveTripSlug}
+              days={days}
+              tripMode={tripMode}
+              roadTrip={activeRoadTrip}
+              roadTripDefaults={roadTripDefaults}
+              homeAirport={homeAirport}
+              onChangeHomeAirport={onChangeHomeAirport}
+              loyaltyPrograms={loyaltyPrograms}
+              onOpenLoyaltyWallet={onOpenLoyaltyWallet}
+              tasteCalibrated={tasteCalibrated}
+              tasteProfile={tasteProfile}
+              savedDefaultTaste={savedDefaultTaste}
+              isComposingCatalog={isComposingCatalog}
+              activitiesTitle={activitiesTitle}
+              activities={activities}
+              sectionsToRender={sectionsToRender}
+              hotels={hotels}
+              savedItems={savedItems}
+              savedRefIds={savedRefIds}
+              likedIds={likedIds}
+              votes={votes}
+              notes={notes}
+              voterKey={effectiveCollaborator?.key}
+              showGroupCollab={showGroupCollab}
+              sheetTarget={sheetTarget}
+              streamWidgets={streamWidgets}
+              activeBookingsTown={activeBookingsTown}
+              onChangeActiveBookingsTown={setActiveBookingsTown}
+              onSummonWidget={summonBookingWidget}
+              messages={messages}
+              streamingText={streamingText}
+              thinkingLabel={thinkingLabel}
+              statusStep={statusStep}
+              onOpenSidebar={onOpenSidebar}
+              onGoHome={onGoHome}
+              onOpenShareModal={() => setShowShareModal(true)}
+              onRetuneTaste={() => setTasteCalibrated(false)}
+              onSubmitTaste={handleTasteSubmit}
+              onToggleLike={handleToggleLike}
+              onToggleSavePlace={handleToggleSavePlace}
+              onOpenActivity={(act) => setSheetTarget({ kind: 'activity', item: act })}
+              onSelectPlace={(p) => setSheetTarget({ kind: 'place', item: p })}
+              onOpenHotel={(h, openRooms = false) =>
+                setSheetTarget({ kind: 'hotel', item: h, focusRooms: openRooms })
+              }
+              onAddFlights={handleAddFlights}
+              onOpenCheckout={() => setShowBookingModal(true)}
+              onVote={showGroupCollab ? handleCollabVote : undefined}
+              onHoverId={setHoveredEntityId}
+              onOrganizeItinerary={() =>
+                runOrganizeItinerary(`Organize my ${destination} stops into a routed timeline`)
+              }
+              onSend={handleCoPilotSend}
+            />
           </div>
 
-          {/* Desktop 4-Tab Canvas Switcher */}
-          <nav
-            className="hidden lg:flex items-center gap-1 rounded-full p-1 border"
-            style={{
-              backgroundColor: 'var(--v-canvas-subtle)',
-              borderColor: 'var(--v-border)',
-            }}
-            aria-label="Trip canvas views"
+          {/* RIGHT 50% (Desktop) / TAB 2 & 3 (Mobile): ALWAYS-LIVE MAP + MY TRIP DRAWER + DOSSIER SHEET */}
+          <div
+            className={`${
+              mobileView !== 'stream' || Boolean(sheetTarget) ? 'flex' : 'hidden lg:flex'
+            } flex-1 lg:flex-none lg:w-[50%] min-h-0 min-w-0 relative flex-col bg-[#F1EFE8] overflow-hidden`}
           >
-            {TABS.map((t) => {
-              const active = activeTab === t.id && !sheetTarget;
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => {
-                    setSheetTarget(null);
-                    setActiveTab(t.id);
-                    if (t.id !== 'discover') setTasteCalibrated(true);
-                  }}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12.5px] font-medium transition-all cursor-pointer ${
-                    active ? 'bg-[#0E2034] shadow-2xs' : 'text-[#5A626A] hover:text-[#14191F]'
-                  }`}
-                >
-                  <t.icon className="w-3.5 h-3.5" />
-                  <span>{t.label}</span>
-                  {t.badge !== undefined && t.badge > 0 && (
-                    <span
-                      className={`min-w-[17px] h-[17px] px-1 rounded-full font-tabular text-[10.5px] font-semibold flex items-center justify-center ${
-                        active ? 'bg-white/20' : 'bg-black/[0.08] text-[#14191F]'
-                      }`}
+            {/* Always-live interactive map stage */}
+            <div className="relative h-full w-full p-2 sm:p-3">
+              <InteractiveMap
+                mapStage="pins"
+                tripMode={tripMode}
+                center={mapCenter}
+                days={days}
+                places={places}
+                hotels={hotels}
+                savedItems={savedItems}
+                showHotelPins={hotels.length > 0}
+                highlightedId={hoveredEntityId}
+                focusedDay={focusedMapDay}
+                onSelectPlace={(p) => setSheetTarget({ kind: 'place', item: p })}
+                onSelectHotel={(h) => setSheetTarget({ kind: 'hotel', item: h })}
+              />
+
+              {/* Floating Top-Right `My Trip` Pill (Desktop, aligned with Day filter & clear of zoom controls) */}
+              {rightPanel === 'map' && !sheetTarget && (
+                <div className="hidden lg:flex absolute top-[26px] right-[72px] z-20 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRightPanel('trip')}
+                    className="inline-flex items-center gap-2 pl-3.5 pr-2.5 py-1.5 rounded-full bg-[#FAF9F5]/95 hover:bg-white backdrop-blur-md border border-black/[0.11] shadow-[0_8px_24px_rgba(14,32,52,0.14)] text-[12.5px] font-semibold text-[#14191F] transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    <CalendarDays className="w-3.5 h-3.5 text-[#C85A17]" />
+                    <span>My Trip</span>
+                    <span className="font-tabular min-w-[20px] h-[20px] px-1.5 rounded-full bg-[#0E2034] text-white text-[11px] font-semibold flex items-center justify-center">
+                      {savedItems.length}
+                    </span>
+                  </button>
+                  {totalCost > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBookingModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0E2034]/95 hover:bg-[#17304D] backdrop-blur-md shadow-[0_8px_24px_rgba(14,32,52,0.18)] font-tabular text-[12px] font-semibold text-white transition-all cursor-pointer"
+                      style={{ color: '#FFFFFF' }}
                     >
-                      {t.badge}
+                      <span>${totalCost.toLocaleString()}</span>
+                      <ArrowRight className="w-3.5 h-3.5 opacity-80" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Slide-Over `My Trip` Timeline Drawer (Desktop rightPanel==='trip' OR Mobile mobileView==='trip') */}
+            <AnimatePresence>
+              {(rightPanel === 'trip' || mobileView === 'trip') && !sheetTarget && (
+                <motion.div
+                  key="my-trip-drawer"
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 24 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  className={`${
+                    rightPanel === 'trip' && mobileView === 'trip'
+                      ? 'flex'
+                      : rightPanel === 'trip'
+                        ? 'hidden lg:flex'
+                        : 'flex lg:hidden'
+                  } absolute inset-0 z-20 flex-col bg-[#F7F6F1] overflow-hidden`}
+                >
+                  {/* Drawer Header */}
+                  <div className="shrink-0 h-[56px] px-4 sm:px-6 flex items-center justify-between gap-2 border-b border-black/[0.07] bg-[#F7F6F1]">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="font-editorial text-[20px] font-medium text-[#14191F] truncate">
+                        My Trip
+                      </span>
+                      <span className="font-tabular px-2 py-0.5 rounded-full bg-[#ECEAE2] text-[11.5px] font-semibold text-[#2C333A] shrink-0">
+                        {savedItems.length} {savedItems.length === 1 ? 'item' : 'items'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {totalCost > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowBookingModal(true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] font-tabular text-[12px] font-semibold cursor-pointer shadow-2xs"
+                          style={{ color: '#FFFFFF' }}
+                        >
+                          <span>Continue · ${totalCost.toLocaleString()}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRightPanel('map');
+                          if (mobileView === 'trip') setMobileView('map');
+                        }}
+                        aria-label="Back to live map"
+                        title="Show live map"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white hover:bg-[#FAF9F5] border border-black/[0.09] text-[12px] font-medium text-[#2C333A] cursor-pointer"
+                      >
+                        <MapIcon className="w-3.5 h-3.5 text-[#5A626A]" />
+                        <span className="hidden sm:inline">Map</span>
+                        <X className="w-3.5 h-3.5 text-[#5A626A]" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Scrollable Timeline Content */}
+                  <div className="flex-1 overflow-y-auto thin-scrollbar px-4 sm:px-6 py-5">
+                    <CanvasTimeline
+                      tripTitle={tripTitle}
+                      tripSlug={liveTripSlug}
+                      destination={destination}
+                      datesLabel={datesLabel}
+                      travelers={travelersLabel}
+                      heroImage={heroImage}
+                      days={days}
+                      tripMode={tripMode}
+                      roadTrip={activeRoadTrip}
+                      items={savedItems}
+                      votes={votes}
+                      notes={notes}
+                      voterKey={effectiveCollaborator?.key}
+                      readOnly={false}
+                      isOrganizing={isOrganizing}
+                      onVote={showGroupCollab ? handleCollabVote : undefined}
+                      onOpenShareModal={() => setShowShareModal(true)}
+                      onSearchFlights={() => summonBookingWidget('flights')}
+                      onSearchHotels={(town) => summonBookingWidget('stays', town)}
+                      onOrganizeItinerary={() =>
+                        runOrganizeItinerary(`Organize my ${destination} stops into a routed timeline`)
+                      }
+                      onExploreDiscover={() => {
+                        setRightPanel('map');
+                        setMobileView('stream');
+                      }}
+                      onInspectItem={handleInspectTimelineItem}
+                      onRemoveItem={(id) => {
+                        const next = savedItems.filter((item) => item.id !== id);
+                        setSavedItems(next);
+                        persistItems(next);
+                      }}
+                      onUpdateItemTime={(id, day, time) => {
+                        const next = savedItems.map((item) =>
+                          item.id === id ? { ...item, day, time } : item
+                        );
+                        setSavedItems(next);
+                        persistItems(next);
+                      }}
+                      onUpdateItemBookingStatus={handleUpdateItemBookingStatus}
+                      onOpenBookingCheckout={() => setShowBookingModal(true)}
+                      onOpenMapDay={(day) => {
+                        setFocusedMapDay(day);
+                        setRightPanel('map');
+                        setMobileView('map');
+                      }}
+                      onNotify={onNotify}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Scoped Contextual Editorial Dossier Sheet (covers Right 50% ONLY; Left Stream stays 100% live!) */}
+            <AnimatePresence>
+              {sheetTarget && (
+                <ContextualEditorialSheet
+                  key={`${sheetTarget.kind}-${sheetTarget.item.id}`}
+                  target={sheetTarget}
+                  destination={destination}
+                  datesLabel={datesLabel}
+                  days={days}
+                  savedItem={savedItems.find((i) => i.refId === sheetTarget.item.id) || null}
+                  votes={votes}
+                  notes={notes}
+                  voterKey={effectiveCollaborator?.key}
+                  readOnly={false}
+                  isPlaceSaved={
+                    sheetTarget.kind === 'place' ? savedRefIds.has(sheetTarget.item.id) : false
+                  }
+                  isLiked={likedIds.has(sheetTarget.item.id)}
+                  onClose={() => setSheetTarget(null)}
+                  onToggleLike={handleToggleLike}
+                  onToggleSavePlace={handleToggleSavePlace}
+                  onAddActivity={handleAddActivity}
+                  onAddHotel={handleAddHotel}
+                  onUpdateBookingStatus={handleUpdateItemBookingStatus}
+                  onVote={showGroupCollab ? handleCollabVote : undefined}
+                  onAddNote={showGroupCollab ? handleCollabAddNote : undefined}
+                  onDeleteNote={showGroupCollab ? handleCollabDeleteNote : undefined}
+                  onAskVesper={(q) => {
+                    setMobileView('stream');
+                    handleCoPilotSend(q);
+                  }}
+                  onNotify={onNotify}
+                />
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* MOBILE (< 1024px) CLEAN 3-TAB BOTTOM BAR: ASK VESPER | MY TRIP | MAP */}
+          <nav
+            className="lg:hidden shrink-0 border-t border-black/[0.08] bg-[#F7F6F1]/95 backdrop-blur-md px-2 pt-1.5 pb-safe grid grid-cols-3 z-40"
+            aria-label="Mobile navigation"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setSheetTarget(null);
+                setMobileView('stream');
+              }}
+              className={`relative flex flex-col items-center justify-center py-1 rounded-xl transition-colors cursor-pointer ${
+                mobileView === 'stream' && !sheetTarget ? 'text-[#14191F]' : 'text-[#7B828A]'
+              }`}
+            >
+              <Sparkles className="w-[19px] h-[19px]" />
+              <span
+                className={`text-[10.5px] mt-0.5 ${
+                  mobileView === 'stream' && !sheetTarget ? 'font-semibold' : 'font-medium'
+                }`}
+              >
+                Ask Vesper
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSheetTarget(null);
+                setRightPanel('trip');
+                setMobileView('trip');
+              }}
+              className={`relative flex flex-col items-center justify-center py-1 rounded-xl transition-colors cursor-pointer ${
+                mobileView === 'trip' && !sheetTarget ? 'text-[#14191F]' : 'text-[#7B828A]'
+              }`}
+            >
+              <div className="relative">
+                <CalendarDays className="w-[19px] h-[19px]" />
+                {savedItems.length > 0 && (
+                  <span
+                    className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] px-1 rounded-full bg-[#0E2034] font-tabular text-[9.5px] font-bold flex items-center justify-center"
+                    style={{ color: '#FFFFFF' }}
+                  >
+                    {savedItems.length}
+                  </span>
+                )}
+              </div>
+              <span
+                className={`text-[10.5px] mt-0.5 ${
+                  mobileView === 'trip' && !sheetTarget ? 'font-semibold' : 'font-medium'
+                }`}
+              >
+                My Trip
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSheetTarget(null);
+                setRightPanel('map');
+                setMobileView('map');
+              }}
+              className={`relative flex flex-col items-center justify-center py-1 rounded-xl transition-colors cursor-pointer ${
+                mobileView === 'map' && !sheetTarget ? 'text-[#14191F]' : 'text-[#7B828A]'
+              }`}
+            >
+              <MapIcon className="w-[19px] h-[19px]" />
+              <span
+                className={`text-[10.5px] mt-0.5 ${
+                  mobileView === 'map' && !sheetTarget ? 'font-semibold' : 'font-medium'
+                }`}
+              >
+                Map
+              </span>
+            </button>
+          </nav>
+        </>
+      ) : (
+        /* ── SHARED GUEST VIEWER MODE: 100% FULL-WIDTH READ-ONLY 4-TAB EXPERIENCE ── */
+        <div className="flex-1 w-full h-full flex flex-col min-w-0 relative">
+          {/* Top Workspace Navigation Bar */}
+          <header className="shrink-0 h-[56px] px-3.5 sm:px-6 flex items-center justify-between gap-2 border-b border-black/[0.06] bg-[#F7F6F1]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                onClick={onOpenSidebar}
+                className="p-1.5 -ml-1 rounded-lg hover:bg-black/[0.05] text-[#14191F] cursor-pointer shrink-0"
+                aria-label="Open menu"
+              >
+                <Menu className="w-[18px] h-[18px]" strokeWidth={1.8} />
+              </button>
+              <button
+                type="button"
+                onClick={onGoHome}
+                title="Back to Vesper home"
+                aria-label="Return to Vesper home"
+                className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 -mx-1 hover:bg-black/[0.04] transition-colors cursor-pointer shrink-0"
+              >
+                <BrandMark size={26} className="shrink-0" />
+                <span className="font-editorial text-[20px] sm:text-[22px] font-medium text-[#14191F] leading-none">
+                  Vesper
+                </span>
+              </button>
+            </div>
+
+            {/* Desktop 4-Tab Canvas Switcher (Guest Viewer) */}
+            <nav
+              className="hidden lg:flex items-center gap-1 rounded-full p-1 border"
+              style={{
+                backgroundColor: 'var(--v-canvas-subtle)',
+                borderColor: 'var(--v-border)',
+              }}
+              aria-label="Trip canvas views"
+            >
+              {TABS.map((t) => {
+                const active = activeTab === t.id && !sheetTarget;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      setSheetTarget(null);
+                      setActiveTab(t.id);
+                    }}
+                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12.5px] font-medium transition-all cursor-pointer ${
+                      active ? 'bg-[#0E2034] shadow-2xs' : 'text-[#5A626A] hover:text-[#14191F]'
+                    }`}
+                  >
+                    <t.icon className="w-3.5 h-3.5" />
+                    <span>{t.label}</span>
+                    {t.badge !== undefined && t.badge > 0 && (
+                      <span
+                        className={`min-w-[17px] h-[17px] px-1 rounded-full font-tabular text-[10.5px] font-semibold flex items-center justify-center ${
+                          active ? 'bg-white/20' : 'bg-black/[0.08] text-[#14191F]'
+                        }`}
+                      >
+                        {t.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Right: Share Link */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {liveTripSlug && (
+                <button
+                  type="button"
+                  onClick={() => setShowShareModal(true)}
+                  title="Share trip & group vote"
+                  aria-label="Share trip and group vote"
+                  className="relative h-8 px-2.5 rounded-full bg-white hover:bg-black/[0.04] border border-black/[0.09] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#2C333A] transition-colors cursor-pointer shrink-0"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-[#5A626A]" />
+                  <span className="hidden sm:inline">Share</span>
+                  {votes.length + notes.length > 0 && (
+                    <span className="font-tabular min-w-[16px] h-[16px] px-1 rounded-full bg-[#C85A17] text-white text-[10px] font-bold flex items-center justify-center">
+                      {votes.length + notes.length}
                     </span>
                   )}
                 </button>
-              );
-            })}
-          </nav>
+              )}
+            </div>
+          </header>
 
-          {/* Right: Share Link + Compact Theme Switcher + Live Trip Total */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {liveTripSlug && (
-              <button
-                type="button"
-                onClick={() => setShowShareModal(true)}
-                title="Share trip & group vote"
-                aria-label="Share trip and group vote"
-                className="relative h-8 px-2.5 rounded-full bg-white hover:bg-black/[0.04] border border-black/[0.09] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#2C333A] transition-colors cursor-pointer shrink-0"
-              >
-                <Share2 className="w-3.5 h-3.5 text-[#5A626A]" />
-                <span className="hidden sm:inline">Share</span>
-                {votes.length + notes.length > 0 && (
-                  <span className="font-tabular min-w-[16px] h-[16px] px-1 rounded-full bg-[#C85A17] text-white text-[10px] font-bold flex items-center justify-center">
-                    {votes.length + notes.length}
-                  </span>
-                )}
-              </button>
-            )}
-            {canEdit && totalCost > 0 && (
-              <button
-                onClick={() => setShowBookingModal(true)}
-                className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#0E2034] font-tabular text-[12px] font-semibold cursor-pointer shadow-2xs"
-              >
-                <span>${totalCost.toLocaleString()}</span>
-              </button>
-            )}
-          </div>
-        </header>
-
-        {/* Shared Guest Viewer Banner (Full-Width Read-Only Mode) */}
-        {!canEdit && (
+          {/* Shared Guest Viewer Banner */}
           <div className="shrink-0 px-3.5 sm:px-6 py-2 bg-[#ECEAE2]/90 border-b border-black/[0.07] flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 text-[12px] text-[#2C333A] min-w-0">
               <Eye className="w-3.5 h-3.5 text-[#C85A17] shrink-0" />
@@ -1283,95 +1696,30 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               </div>
             )}
           </div>
-        )}
 
-        {/* Active Canvas Stage + Scoped Contextual Sheet Overlay */}
-        <div className="relative flex-1 min-h-0 overflow-hidden">
-          {activeTab === 'map' ? (
-            <div className="h-full w-full p-3 sm:p-4 pb-20 lg:pb-4">
-              <InteractiveMap
-                mapStage="pins"
-                tripMode={tripMode}
-                center={mapCenter}
-                days={days}
-                places={places}
-                hotels={hotels}
-                savedItems={savedItems}
-                showHotelPins={true}
-                highlightedId={hoveredEntityId}
-                focusedDay={focusedMapDay}
-                onSelectPlace={(p) => setSheetTarget({ kind: 'place', item: p })}
-                onSelectHotel={(h) => setSheetTarget({ kind: 'hotel', item: h })}
-              />
-            </div>
-          ) : (
-            <div className="h-full w-full overflow-y-auto thin-scrollbar px-4 sm:px-7 py-5 sm:py-6">
-              {activeTab === 'discover' &&
-                (!tasteCalibrated ? (
-                  <>
-                    {/* Mobile (< 1024px): Compact thumb-friendly conversational calibration */}
-                    <div className="lg:hidden h-full">
-                      <MobileChatCalibration
-                        destination={destination}
-                        dates={datesLabel}
-                        detectedTripMode={tripMode}
-                        initialStartCity={
-                          roadTripDefaults?.startCity ||
-                          homeAirport?.replace(/\s*\([A-Z]{3}\)\s*$/, '') ||
-                          ''
-                        }
-                        initialTransportMode={roadTripDefaults?.transportMode || 'drive_home'}
-                        initialProfile={tasteProfile || savedDefaultTaste}
-                        onSubmit={handleTasteSubmit}
-                      />
-                    </div>
-                    {/* Desktop (>= 1024px): Full visual editorial TasteCard */}
-                    <div className="hidden lg:block py-2 pb-8">
-                      <TasteCard
-                        destination={destination}
-                        dates={datesLabel}
-                        detectedTripMode={tripMode}
-                        initialStartCity={
-                          roadTripDefaults?.startCity ||
-                          homeAirport?.replace(/\s*\([A-Z]{3}\)\s*$/, '') ||
-                          ''
-                        }
-                        initialTransportMode={roadTripDefaults?.transportMode || 'drive_home'}
-                        initialProfile={tasteProfile || savedDefaultTaste}
-                        onSubmit={handleTasteSubmit}
-                      />
-                    </div>
-                  </>
-                ) : isComposingCatalog ? (
-                  <div className="max-w-[860px] mx-auto space-y-6 pb-20">
-                    <div className="rounded-[22px] bg-white border border-black/[0.08] p-5 flex items-center gap-3 shadow-2xs">
-                      <Loader2 className="w-5 h-5 animate-spin text-[#C85A17] shrink-0" />
-                      <div>
-                        <div className="text-[14.5px] font-semibold text-[#14191F]">
-                          Curating {destination} around your taste...
-                        </div>
-                        <div className="text-[12.5px] text-[#7B828A]">
-                          Pulling verified places, real photography, ratings & stays.
-                        </div>
-                      </div>
-                    </div>
-                    {[1, 2].map((row) => (
-                      <div key={row} className="space-y-3">
-                        <div className="h-6 w-48 rounded-lg bg-[#ECEAE2] skeleton-pulse" />
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                          {[1, 2, 3].map((card) => (
-                            <div
-                              key={card}
-                              className="h-[250px] rounded-[20px] bg-white border border-black/[0.07] skeleton-pulse"
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
+          {/* Active Guest Canvas Stage + Scoped Editorial Sheet */}
+          <div className="relative flex-1 min-h-0 overflow-hidden">
+            {activeTab === 'map' ? (
+              <div className="h-full w-full p-3 sm:p-4 pb-20 lg:pb-4">
+                <InteractiveMap
+                  mapStage="pins"
+                  tripMode={tripMode}
+                  center={mapCenter}
+                  days={days}
+                  places={places}
+                  hotels={hotels}
+                  savedItems={savedItems}
+                  showHotelPins={true}
+                  highlightedId={hoveredEntityId}
+                  focusedDay={focusedMapDay}
+                  onSelectPlace={(p) => setSheetTarget({ kind: 'place', item: p })}
+                  onSelectHotel={(h) => setSheetTarget({ kind: 'hotel', item: h })}
+                />
+              </div>
+            ) : (
+              <div className="h-full w-full overflow-y-auto thin-scrollbar px-4 sm:px-7 py-5 sm:py-6">
+                {activeTab === 'discover' && (
                   <div className="max-w-[860px] mx-auto space-y-8 pb-24 lg:pb-12">
-                    {/* Active Preference Summary Banner */}
                     <div className="rounded-[20px] bg-white border border-black/[0.08] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
                       <div className="space-y-1">
                         <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#C85A17]">
@@ -1392,26 +1740,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                           ).join(', ')}
                         </div>
                       </div>
-                      {canEdit && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={() => setTasteCalibrated(false)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F3F2EC] hover:bg-[#ECEAE2] text-[12px] font-medium text-[#2C333A] cursor-pointer"
-                          >
-                            <SlidersHorizontal className="w-3.5 h-3.5" />
-                            <span>Retune</span>
-                          </button>
-                          <button
-                            onClick={() =>
-                              runOrganizeItinerary(`Auto-route my ${destination} trip into days`)
-                            }
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0E2034] hover:bg-[#17304D] text-[12px] font-medium cursor-pointer"
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            <span>Auto-route trip</span>
-                          </button>
-                        </div>
-                      )}
                     </div>
 
                     {activities.length > 0 && (
@@ -1435,7 +1763,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                           places={sec.places}
                           savedRefIds={savedRefIds}
                           likedIds={likedIds}
-                          readOnly={!canEdit}
+                          readOnly={true}
                           onToggleSave={handleToggleSavePlace}
                           onToggleLike={handleToggleLike}
                           onSelectPlace={(p) => setSheetTarget({ kind: 'place', item: p })}
@@ -1443,257 +1771,162 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                         />
                       ))}
                   </div>
-                ))}
+                )}
 
-              {activeTab === 'timeline' && (
-                <CanvasTimeline
-                  tripTitle={tripTitle}
-                  tripSlug={liveTripSlug}
+                {activeTab === 'timeline' && (
+                  <CanvasTimeline
+                    tripTitle={tripTitle}
+                    tripSlug={liveTripSlug}
+                    destination={destination}
+                    datesLabel={datesLabel}
+                    travelers={travelersLabel}
+                    heroImage={heroImage}
+                    days={days}
+                    tripMode={tripMode}
+                    roadTrip={activeRoadTrip}
+                    items={savedItems}
+                    votes={votes}
+                    notes={notes}
+                    voterKey={effectiveCollaborator?.key}
+                    readOnly={true}
+                    isOrganizing={false}
+                    onVote={showGroupCollab ? handleCollabVote : undefined}
+                    onOpenShareModal={() => setShowShareModal(true)}
+                    onSearchFlights={() => {
+                      setBookingsSubTab('flights');
+                      setActiveTab('bookings');
+                    }}
+                    onSearchHotels={(town) => {
+                      setActiveBookingsTown(town || null);
+                      setBookingsSubTab('stays');
+                      setActiveTab('bookings');
+                    }}
+                    onOrganizeItinerary={() => {}}
+                    onExploreDiscover={() => setActiveTab('discover')}
+                    onInspectItem={handleInspectTimelineItem}
+                    onRemoveItem={() => {}}
+                    onUpdateItemTime={() => {}}
+                    onUpdateItemBookingStatus={handleUpdateItemBookingStatus}
+                    onOpenBookingCheckout={() => {}}
+                    onOpenMapDay={(day) => {
+                      setFocusedMapDay(day);
+                      setActiveTab('map');
+                    }}
+                    onNotify={onNotify}
+                  />
+                )}
+
+                {activeTab === 'bookings' && (
+                  <CanvasBookings
+                    subTab={bookingsSubTab}
+                    onChangeSubTab={setBookingsSubTab}
+                    homeAirport={homeAirport}
+                    onChangeHomeAirport={onChangeHomeAirport}
+                    loyaltyPrograms={loyaltyPrograms}
+                    onOpenLoyaltyWallet={onOpenLoyaltyWallet}
+                    destination={destination}
+                    datesLabel={datesLabel}
+                    travelers={travelersLabel}
+                    days={days}
+                    tripMode={tripMode}
+                    roadTrip={activeRoadTrip}
+                    activeTown={activeBookingsTown}
+                    onChangeActiveTown={setActiveBookingsTown}
+                    hotels={hotels}
+                    items={savedItems}
+                    likedIds={likedIds}
+                    votes={votes}
+                    notes={notes}
+                    voterKey={effectiveCollaborator?.key}
+                    readOnly={true}
+                    onVote={showGroupCollab ? handleCollabVote : undefined}
+                    onOpenSharePoll={showGroupCollab ? () => setShowShareModal(true) : undefined}
+                    onToggleLike={handleToggleLike}
+                    onOpenHotel={(h, openRooms = false) =>
+                      setSheetTarget({ kind: 'hotel', item: h, focusRooms: openRooms })
+                    }
+                    onAddFlights={handleAddFlights}
+                    onOpenCheckout={() => {}}
+                    onHoverId={setHoveredEntityId}
+                  />
+                )}
+              </div>
+            )}
+
+            <AnimatePresence>
+              {sheetTarget && (
+                <ContextualEditorialSheet
+                  key={`${sheetTarget.kind}-${sheetTarget.item.id}`}
+                  target={sheetTarget}
                   destination={destination}
                   datesLabel={datesLabel}
-                  travelers={travelersLabel}
-                  heroImage={heroImage}
                   days={days}
-                  tripMode={tripMode}
-                  roadTrip={
-                    tasteProfile?.roadTrip ||
-                    (roadTripDefaults
-                      ? {
-                          startCity: roadTripDefaults.startCity,
-                          transportMode: roadTripDefaults.transportMode,
-                          maxDriveHoursPerDay: '2_to_4h',
-                          overnightTowns: roadTripDefaults.overnightTowns,
-                        }
-                      : null)
-                  }
-                  items={savedItems}
+                  savedItem={savedItems.find((i) => i.refId === sheetTarget.item.id) || null}
                   votes={votes}
                   notes={notes}
                   voterKey={effectiveCollaborator?.key}
-                  readOnly={!canEdit}
-                  isOrganizing={isOrganizing}
-                  onVote={showGroupCollab ? handleCollabVote : undefined}
-                  onOpenShareModal={() => setShowShareModal(true)}
-                  onSearchFlights={() => {
-                    setBookingsSubTab('flights');
-                    setActiveTab('bookings');
-                  }}
-                  onSearchHotels={(town) => {
-                    setActiveBookingsTown(town || null);
-                    setBookingsSubTab('stays');
-                    setActiveTab('bookings');
-                  }}
-                  onOrganizeItinerary={() =>
-                    runOrganizeItinerary(`Organize my ${destination} stops into a routed timeline`)
+                  readOnly={true}
+                  isPlaceSaved={
+                    sheetTarget.kind === 'place' ? savedRefIds.has(sheetTarget.item.id) : false
                   }
-                  onExploreDiscover={() => setActiveTab('discover')}
-                  onInspectItem={handleInspectTimelineItem}
-                  onRemoveItem={(id) => {
-                    const next = savedItems.filter((item) => item.id !== id);
-                    setSavedItems(next);
-                    persistItems(next);
-                  }}
-                  onUpdateItemTime={(id, day, time) => {
-                    const next = savedItems.map((item) =>
-                      item.id === id ? { ...item, day, time } : item
-                    );
-                    setSavedItems(next);
-                    persistItems(next);
-                  }}
-                  onUpdateItemBookingStatus={handleUpdateItemBookingStatus}
-                  onOpenBookingCheckout={() => setShowBookingModal(true)}
-                  onOpenMapDay={(day) => {
-                    setFocusedMapDay(day);
-                    setActiveTab('map');
-                  }}
+                  isLiked={likedIds.has(sheetTarget.item.id)}
+                  onClose={() => setSheetTarget(null)}
+                  onToggleLike={handleToggleLike}
+                  onToggleSavePlace={handleToggleSavePlace}
+                  onAddActivity={handleAddActivity}
+                  onAddHotel={handleAddHotel}
+                  onUpdateBookingStatus={handleUpdateItemBookingStatus}
+                  onVote={showGroupCollab ? handleCollabVote : undefined}
+                  onAddNote={showGroupCollab ? handleCollabAddNote : undefined}
+                  onDeleteNote={showGroupCollab ? handleCollabDeleteNote : undefined}
+                  onAskVesper={() => {}}
                   onNotify={onNotify}
                 />
               )}
+            </AnimatePresence>
+          </div>
 
-              {activeTab === 'bookings' && (
-                <CanvasBookings
-                  subTab={bookingsSubTab}
-                  onChangeSubTab={setBookingsSubTab}
-                  homeAirport={homeAirport}
-                  onChangeHomeAirport={onChangeHomeAirport}
-                  loyaltyPrograms={loyaltyPrograms}
-                  onOpenLoyaltyWallet={onOpenLoyaltyWallet}
-                  destination={destination}
-                  datesLabel={datesLabel}
-                  travelers={travelersLabel}
-                  days={days}
-                  tripMode={tripMode}
-                  roadTrip={tasteProfile?.roadTrip || (roadTripDefaults ? {
-                    startCity: roadTripDefaults.startCity,
-                    transportMode: roadTripDefaults.transportMode,
-                    maxDriveHoursPerDay: '2_to_4h',
-                    overnightTowns: roadTripDefaults.overnightTowns,
-                  } : null)}
-                  activeTown={activeBookingsTown}
-                  onChangeActiveTown={setActiveBookingsTown}
-                  hotels={hotels}
-                  items={savedItems}
-                  likedIds={likedIds}
-                  votes={votes}
-                  notes={notes}
-                  voterKey={effectiveCollaborator?.key}
-                  readOnly={!canEdit}
-                  onVote={showGroupCollab ? handleCollabVote : undefined}
-                  onOpenSharePoll={showGroupCollab ? () => setShowShareModal(true) : undefined}
-                  onToggleLike={handleToggleLike}
-                  onOpenHotel={(h, openRooms = false) =>
-                    setSheetTarget({ kind: 'hotel', item: h, focusRooms: openRooms })
-                  }
-                  onAddFlights={handleAddFlights}
-                  onOpenCheckout={() => setShowBookingModal(true)}
-                  onHoverId={setHoveredEntityId}
-                />
-              )}
-            </div>
-          )}
-
-          {/* Contextual Floating Editorial Sheet (keeps Right Co-Pilot LIVE!) */}
-          <AnimatePresence>
-            {sheetTarget && (
-              <ContextualEditorialSheet
-                key={`${sheetTarget.kind}-${sheetTarget.item.id}`}
-                target={sheetTarget}
-                destination={destination}
-                datesLabel={datesLabel}
-                days={days}
-                savedItem={savedItems.find((i) => i.refId === sheetTarget.item.id) || null}
-                votes={votes}
-                notes={notes}
-                voterKey={effectiveCollaborator?.key}
-                readOnly={!canEdit}
-                isPlaceSaved={
-                  sheetTarget.kind === 'place' ? savedRefIds.has(sheetTarget.item.id) : false
-                }
-                isLiked={likedIds.has(sheetTarget.item.id)}
-                onClose={() => setSheetTarget(null)}
-                onToggleLike={handleToggleLike}
-                onToggleSavePlace={handleToggleSavePlace}
-                onAddActivity={handleAddActivity}
-                onAddHotel={handleAddHotel}
-                onUpdateBookingStatus={handleUpdateItemBookingStatus}
-                onVote={showGroupCollab ? handleCollabVote : undefined}
-                onAddNote={showGroupCollab ? handleCollabAddNote : undefined}
-                onDeleteNote={showGroupCollab ? handleCollabDeleteNote : undefined}
-                onAskVesper={(q) => {
-                  setMobileCopilotOpen(true);
-                  handleCoPilotSend(q);
-                }}
-                onNotify={onNotify}
-              />
-            )}
-          </AnimatePresence>
+          {/* Mobile 4-Tab Bar (Guest Viewer) */}
+          <nav
+            className="lg:hidden shrink-0 border-t border-black/[0.08] bg-[#F7F6F1]/95 backdrop-blur-md px-2 pt-1.5 pb-safe grid grid-cols-4 z-40"
+            aria-label="Mobile navigation"
+          >
+            {TABS.map((t) => {
+              const active = activeTab === t.id && !sheetTarget;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    setSheetTarget(null);
+                    setActiveTab(t.id);
+                  }}
+                  className={`relative flex flex-col items-center justify-center py-1 rounded-xl transition-colors cursor-pointer ${
+                    active ? 'text-[#14191F]' : 'text-[#7B828A]'
+                  }`}
+                >
+                  <div className="relative">
+                    <t.icon className="w-[19px] h-[19px]" />
+                    {t.badge !== undefined && t.badge > 0 && (
+                      <span
+                        className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] px-1 rounded-full bg-[#0E2034] font-tabular text-[9.5px] font-bold flex items-center justify-center"
+                        style={{ color: '#FFFFFF' }}
+                      >
+                        {t.badge}
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    className={`text-[10.5px] mt-0.5 ${active ? 'font-semibold' : 'font-medium'}`}
+                  >
+                    {t.label}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
-
-        {/* Mobile Native Bottom Tab Bar (< 1024px) */}
-        <nav
-          className="lg:hidden shrink-0 border-t border-black/[0.08] bg-[#F7F6F1]/95 backdrop-blur-md px-2 pt-1.5 pb-safe grid grid-cols-4 z-40"
-          aria-label="Mobile navigation"
-        >
-          {TABS.map((t) => {
-            const active = activeTab === t.id && !sheetTarget;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => {
-                  setSheetTarget(null);
-                  setActiveTab(t.id);
-                  if (t.id !== 'discover') setTasteCalibrated(true);
-                }}
-                className={`relative flex flex-col items-center justify-center py-1 rounded-xl transition-colors cursor-pointer ${
-                  active ? 'text-[#14191F]' : 'text-[#7B828A]'
-                }`}
-              >
-                <div className="relative">
-                  <t.icon className="w-[19px] h-[19px]" />
-                  {t.badge !== undefined && t.badge > 0 && (
-                    <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] px-1 rounded-full bg-[#0E2034] font-tabular text-[9.5px] font-bold flex items-center justify-center">
-                      {t.badge}
-                    </span>
-                  )}
-                </div>
-                <span className={`text-[10.5px] mt-0.5 ${active ? 'font-semibold' : 'font-medium'}`}>
-                  {t.label}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Mobile Floating Vesper Co-Pilot FAB (< 1024px, Organizer only, hidden during calibration chat) */}
-        {canEdit && tasteCalibrated && !mobileCopilotOpen && (
-          <button
-            type="button"
-            onClick={() => {
-              setMobileCopilotOpen(true);
-              setHasUnreadCopilot(false);
-            }}
-            className="lg:hidden fixed bottom-[76px] right-4 z-40 w-13 h-13 rounded-full shadow-[0_10px_28px_rgba(0,0,0,0.28)] flex items-center justify-center active:scale-95 transition-transform cursor-pointer border-2"
-            style={{
-              backgroundColor: 'var(--v-cta)',
-              borderColor: 'var(--v-surface)',
-            }}
-            aria-label="Open Ask Vesper"
-          >
-            <BrandMark size={38} />
-            {hasUnreadCopilot && (
-              <span className="absolute top-0 right-0 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-white" />
-            )}
-          </button>
-        )}
-      </div>
-
-      {/* ── RIGHT 34% (Desktop, Organizer only): LIVE CO-PILOT RAIL ─────── */}
-      {canEdit && (
-        <aside className="hidden lg:block lg:w-[34%] h-full border-l border-black/[0.08] shrink-0">
-          <CoPilotRail
-            messages={messages}
-            streamingText={streamingText}
-            thinkingLabel={thinkingLabel}
-            statusStep={statusStep}
-            sheetTarget={sheetTarget}
-            onSend={handleCoPilotSend}
-          />
-        </aside>
       )}
-
-      {/* ── MOBILE CO-PILOT BOTTOM SHEET (< 1024px, Organizer only) ─────── */}
-      <AnimatePresence>
-        {canEdit && mobileCopilotOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="lg:hidden fixed inset-0 z-[1050] bg-black/45 backdrop-blur-xs flex flex-col justify-end"
-            onClick={() => setMobileCopilotOpen(false)}
-          >
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-              onClick={(e) => e.stopPropagation()}
-              className="h-[82dvh] w-full rounded-t-[26px] overflow-hidden shadow-2xl border-t border-black/[0.1]"
-            >
-              <CoPilotRail
-                messages={messages}
-                streamingText={streamingText}
-                thinkingLabel={thinkingLabel}
-                statusStep={statusStep}
-                sheetTarget={sheetTarget}
-                isMobileSheet
-                onCloseMobile={() => setMobileCopilotOpen(false)}
-                onSend={handleCoPilotSend}
-              />
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── ONE-CLICK CHECKOUT MODAL ────────────────────────────────────── */}
       <AnimatePresence>
@@ -1731,7 +1964,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             }}
             onSaveCollaboratorName={(name) => saveCollaboratorName(name)}
             onAskCoPilotConsensus={() => {
-              setMobileCopilotOpen(true);
+              setMobileView('stream');
               handleCoPilotSend(
                 'Summarize our group votes and notes, and recommend which stay and stops we should lock in.'
               );

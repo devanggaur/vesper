@@ -541,24 +541,25 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             );
           })}
         </div>
-
-        {hasScheduledRoutes && (
-          <div
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full shadow-sm border text-[11px] font-medium backdrop-blur-md"
-            style={{
-              backgroundColor: 'var(--v-surface)',
-              borderColor: 'var(--v-border)',
-              color: 'var(--v-ink-muted)',
-            }}
-          >
-            <span>
-              {tripMode === 'roadtrip'
-                ? 'Live highway route by day'
-                : 'Curved arcs connect each day’s route'}
-            </span>
-          </div>
-        )}
       </div>
+
+      {/* Bottom-Left Route Mode Legend Pill (keeps top bar clear for Day filter + My Trip pill) */}
+      {hasScheduledRoutes && (
+        <div
+          className="hidden sm:inline-flex absolute bottom-7 left-3.5 z-[20] items-center gap-1.5 px-3 py-1.5 rounded-full shadow-sm border text-[11px] font-medium backdrop-blur-md pointer-events-none"
+          style={{
+            backgroundColor: 'var(--v-surface)',
+            borderColor: 'var(--v-border)',
+            color: 'var(--v-ink-muted)',
+          }}
+        >
+          <span>
+            {tripMode === 'roadtrip'
+              ? 'Live highway route by day'
+              : 'Curved arcs connect each day’s route'}
+          </span>
+        </div>
+      )}
 
       {/* Top-Right Custom Zoom Controls */}
       <div className="absolute top-3.5 right-3.5 z-[20] flex flex-col rounded-full bg-white/95 shadow-md border border-black/[0.08] overflow-hidden">

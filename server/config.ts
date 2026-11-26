@@ -26,18 +26,19 @@ export const config = {
   geminiModels: [
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
+    'gemini-3.8-flash',
     'gemini-3.5-flash',
-    'gemini-2.5-flash',
   ] as const,
-  /** Richer conversational & editorial model chain for live Co-Pilot chat and Discover curation */
+  /** Richer conversational & editorial model chain for live Ask Vesper chat and Discover curation */
   geminiChatModels: [
+    'gemini-3.8-flash',
     'gemini-3.6-flash',
     'gemini-3.5-flash',
-    'gemini-3.1-pro-preview',
-    'gemini-2.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
   ] as const,
   /** Per-attempt timeout (ms) before failing over to next model */
-  geminiTimeoutMs: 14000,
+  geminiTimeoutMs: 10000,
   /**
    * Enable live Google Search grounding on Discover curation (requires Paid-tier Gemini quota;
    * free-tier keys have 0 search-grounding quota and gracefully use Gemini's curated knowledge).
