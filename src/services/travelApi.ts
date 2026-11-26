@@ -30,8 +30,10 @@ import {
   PlaceItem,
   TripCatalogPayload,
   TripDayMeta,
+  TripNote,
   TripSavedItem,
   TripSummary,
+  TripVote,
 } from '../types/travel';
 import { getAccessToken } from '../lib/supabaseClient';
 
@@ -141,6 +143,8 @@ export const travelApi = {
     trip: LiveTripMetadata;
     items: TripSavedItem[];
     messages: ChatMessage[];
+    votes?: TripVote[];
+    notes?: TripNote[];
   }> {
     return apiFetch(`/api/trips/${encodeURIComponent(tripId)}`);
   },
@@ -149,8 +153,60 @@ export const travelApi = {
     trip: LiveTripMetadata;
     items: TripSavedItem[];
     messages: ChatMessage[];
+    votes?: TripVote[];
+    notes?: TripNote[];
   }> {
     return apiFetch(`/api/trips/slug/${encodeURIComponent(slug)}`);
+  },
+
+  async setTripVote(
+    tripId: string,
+    payload: {
+      entityId: string;
+      entityKind: 'hotel' | 'place' | 'activity';
+      voterKey: string;
+      voterName: string;
+      vote: 'up' | 'down' | 'clear';
+    }
+  ): Promise<TripVote[]> {
+    const res = await apiFetch<{ votes: TripVote[] }>(
+      `/api/trips/${encodeURIComponent(tripId)}/votes`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+    return res.votes || [];
+  },
+
+  async addTripNote(
+    tripId: string,
+    payload: {
+      entityId: string;
+      entityKind: 'hotel' | 'place' | 'activity';
+      authorKey: string;
+      authorName: string;
+      body: string;
+    }
+  ): Promise<TripNote[]> {
+    const res = await apiFetch<{ notes: TripNote[] }>(
+      `/api/trips/${encodeURIComponent(tripId)}/notes`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+    return res.notes || [];
+  },
+
+  async deleteTripNote(tripId: string, noteId: string, authorKey: string): Promise<TripNote[]> {
+    const res = await apiFetch<{ notes: TripNote[] }>(
+      `/api/trips/${encodeURIComponent(tripId)}/notes/${encodeURIComponent(noteId)}?authorKey=${encodeURIComponent(authorKey)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    return res.notes || [];
   },
 
   async claimTrip(tripId: string): Promise<{ ok: boolean }> {

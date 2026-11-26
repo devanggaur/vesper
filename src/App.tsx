@@ -364,6 +364,7 @@ export function App() {
               savedDefaultTaste={defaultTaste}
               homeAirport={homeAirport}
               loyaltyPrograms={loyaltyPrograms}
+              userProfile={userProfile}
               onChangeHomeAirport={handleChangeHomeAirport}
               onSaveDefaultTaste={handleSaveDefaultTaste}
               onOpenLoyaltyWallet={openLoyaltyWallet}

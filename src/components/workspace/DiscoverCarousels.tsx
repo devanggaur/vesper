@@ -13,8 +13,17 @@ import {
   DollarSign,
   Award,
   Sparkles,
+  ThumbsUp,
+  MessageSquare,
 } from 'lucide-react';
-import { ActivityItem, HotelItem, PlaceItem } from '../../types/travel';
+import {
+  ActivityItem,
+  CollabEntityKind,
+  HotelItem,
+  PlaceItem,
+  TripNote,
+  TripVote,
+} from '../../types/travel';
 import { SmartImage } from '../common/SmartImage';
 import { renderInlineBold } from '../../utils/format';
 import {
@@ -329,6 +338,10 @@ interface HotelSearchCarouselProps {
   guests: string;
   hotels: HotelItem[];
   likedIds: Set<string>;
+  votes?: TripVote[];
+  notes?: TripNote[];
+  voterKey?: string;
+  onVote?: (entityId: string, kind: CollabEntityKind, vote: 'up' | 'down' | 'clear') => void;
   onToggleLike: (id: string) => void;
   onOpenHotel: (hotel: HotelItem, openRooms?: boolean) => void;
   onHoverId: (id: string | null) => void;
@@ -340,6 +353,10 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
   guests,
   hotels,
   likedIds,
+  votes = [],
+  notes = [],
+  voterKey,
+  onVote,
   onToggleLike,
   onOpenHotel,
   onHoverId,
@@ -348,9 +365,19 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
   const [fourPlusOnly, setFourPlusOnly] = useState(true);
   const [sortBy, setSortBy] = useState<'best' | 'price'>('best');
 
+  const voteCountFor = (hotelId: string) =>
+    votes.filter((v) => v.entityId === hotelId && v.vote === 'up').length;
+
+  const maxHotelVotes = hotels.reduce((m, h) => Math.max(m, voteCountFor(h.id)), 0);
+
   const filtered = [...hotels]
     .filter((h) => (!fourPlusOnly ? true : h.stars >= 4))
-    .sort((a, b) => (sortBy === 'price' ? a.priceTotal - b.priceTotal : b.rating - a.rating));
+    .sort((a, b) => {
+      if (sortBy === 'price') return a.priceTotal - b.priceTotal;
+      const vDiff = voteCountFor(b.id) - voteCountFor(a.id);
+      if (vDiff !== 0) return vDiff;
+      return b.rating - a.rating;
+    });
 
   const scrollBy = (dir: number) => {
     scrollRef.current?.scrollBy({ left: dir * 320, behavior: 'smooth' });
@@ -447,7 +474,15 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
 
       {/* Horizontal Hotel Cards */}
       <div ref={scrollRef} className="flex gap-3 sm:gap-3.5 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-1 -mx-1 px-1">
-        {filtered.map((hotel) => (
+        {filtered.map((hotel) => {
+          const hotelUpvotes = votes.filter((v) => v.entityId === hotel.id && v.vote === 'up');
+          const myVote = voterKey
+            ? votes.find((v) => v.entityId === hotel.id && v.voterKey === voterKey)?.vote
+            : undefined;
+          const hotelNotesCount = notes.filter((n) => n.entityId === hotel.id).length;
+          const isTopVoted = maxHotelVotes > 0 && hotelUpvotes.length === maxHotelVotes;
+
+          return (
           <div
             key={hotel.id}
             onMouseEnter={() => onHoverId(hotel.id)}
@@ -464,25 +499,58 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
                   alt={hotel.name}
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
-                {hotel.livePricing && (
-                  <span className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full bg-emerald-600/92 text-white text-[10.5px] font-semibold backdrop-blur-md shadow-xs">
-                    Live{hotel.pricePerNight ? ` · $${hotel.pricePerNight}/n` : ''}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleLike(hotel.id);
-                  }}
-                  className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-xs flex items-center justify-center text-white cursor-pointer"
-                >
-                  <Heart
-                    className={`w-4 h-4 ${
-                      likedIds.has(hotel.id) ? 'fill-rose-500 text-rose-500' : 'text-white'
-                    }`}
-                  />
-                </button>
+                <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                  {isTopVoted && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#0E2034]/92 text-white text-[10.5px] font-semibold backdrop-blur-md shadow-xs">
+                      ★ Top voted
+                    </span>
+                  )}
+                  {hotel.livePricing && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-600/92 text-white text-[10.5px] font-semibold backdrop-blur-md shadow-xs">
+                      Live{hotel.pricePerNight ? ` · $${hotel.pricePerNight}/n` : ''}
+                    </span>
+                  )}
+                </div>
+                <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                  {onVote && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onVote(hotel.id, 'hotel', myVote === 'up' ? 'clear' : 'up');
+                      }}
+                      title={
+                        hotelUpvotes.length > 0
+                          ? `Voted by ${hotelUpvotes.map((v) => v.voterName).join(', ')}`
+                          : 'Vote for this stay'
+                      }
+                      className={`h-8 px-2.5 rounded-full backdrop-blur-xs inline-flex items-center gap-1 text-[11.5px] font-semibold transition-all cursor-pointer ${
+                        myVote === 'up'
+                          ? 'bg-[#0E2034] text-white shadow-md'
+                          : 'bg-black/45 hover:bg-[#0E2034] text-white'
+                      }`}
+                    >
+                      <ThumbsUp className="w-3.5 h-3.5" />
+                      {hotelUpvotes.length > 0 && (
+                        <span className="font-tabular">{hotelUpvotes.length}</span>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleLike(hotel.id);
+                    }}
+                    className="w-8 h-8 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-xs flex items-center justify-center text-white cursor-pointer"
+                  >
+                    <Heart
+                      className={`w-4 h-4 ${
+                        likedIds.has(hotel.id) ? 'fill-rose-500 text-rose-500' : 'text-white'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
 
               <div className="p-3.5 space-y-1.5">
@@ -510,6 +578,11 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
                       · Free cancel
                     </span>
                   )}
+                  {hotelNotesCount > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-[#14191F]">
+                      · <MessageSquare className="w-3 h-3 text-[#C85A17]" /> {hotelNotesCount}
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-[12px] text-[#5A626A] line-clamp-2 leading-relaxed pt-0.5">
@@ -534,7 +607,8 @@ export const HotelSearchCarousel: React.FC<HotelSearchCarouselProps> = ({
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

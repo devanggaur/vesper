@@ -18,8 +18,17 @@ import {
   MapPin,
   CheckCircle2,
   ExternalLink,
+  ThumbsUp,
+  MessageSquare,
 } from 'lucide-react';
-import { BookingStatus, TripDayMeta, TripSavedItem } from '../../types/travel';
+import {
+  BookingStatus,
+  CollabEntityKind,
+  TripDayMeta,
+  TripNote,
+  TripSavedItem,
+  TripVote,
+} from '../../types/travel';
 import { DEFAULT_CDMX_DAYS, RouteLegEstimate, travelApi } from '../../services/travelApi';
 import {
   buildVenueBookingLinks,
@@ -40,7 +49,12 @@ interface CanvasTimelineProps {
   heroImage?: string;
   days?: TripDayMeta[];
   items: TripSavedItem[];
+  votes?: TripVote[];
+  notes?: TripNote[];
+  voterKey?: string;
   isOrganizing: boolean;
+  onVote?: (entityId: string, kind: CollabEntityKind, vote: 'up' | 'down' | 'clear') => void;
+  onOpenShareModal?: () => void;
   onSearchFlights: () => void;
   onSearchHotels: () => void;
   onOrganizeItinerary: () => void;
@@ -70,7 +84,12 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
   heroImage,
   days = DEFAULT_CDMX_DAYS,
   items,
+  votes = [],
+  notes = [],
+  voterKey,
   isOrganizing,
+  onVote,
+  onOpenShareModal,
   onSearchFlights,
   onSearchHotels,
   onOrganizeItinerary,
@@ -143,6 +162,10 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
   }, [routeLegsSignature]);
 
   const handleShareLink = () => {
+    if (onOpenShareModal) {
+      onOpenShareModal();
+      return;
+    }
     const shareUrl = tripSlug ? `${window.location.origin}/t/${tripSlug}` : window.location.href;
     navigator.clipboard?.writeText(shareUrl).catch(() => {});
     onNotify(tripSlug ? `Copied share link: /t/${tripSlug}` : 'Copied trip link to clipboard');
@@ -548,6 +571,64 @@ export const CanvasTimeline: React.FC<CanvasTimelineProps> = ({
                             </button>
 
                             <div className="flex items-center gap-1.5 shrink-0">
+                              {onVote && (item.type === 'place' || item.type === 'activity') && (() => {
+                                const entityId = item.refId;
+                                const entityKind: CollabEntityKind =
+                                  item.type === 'activity' ? 'activity' : 'place';
+                                const upVotes = votes.filter(
+                                  (v) => v.entityId === entityId && v.vote === 'up'
+                                );
+                                const myVote = voterKey
+                                  ? votes.find(
+                                      (v) => v.entityId === entityId && v.voterKey === voterKey
+                                    )?.vote
+                                  : undefined;
+                                const noteCount = notes.filter(
+                                  (n) => n.entityId === entityId
+                                ).length;
+
+                                return (
+                                  <div className="flex items-center gap-1">
+                                    {noteCount > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onInspectItem(item)}
+                                        title={`${noteCount} group note${noteCount > 1 ? 's' : ''}`}
+                                        className="inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-white border border-black/[0.08] text-[11px] font-medium text-[#5A626A] hover:border-[#0E2034] cursor-pointer"
+                                      >
+                                        <MessageSquare className="w-3 h-3 text-[#C85A17]" />
+                                        <span className="font-tabular">{noteCount}</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onVote(
+                                          entityId,
+                                          entityKind,
+                                          myVote === 'up' ? 'clear' : 'up'
+                                        )
+                                      }
+                                      title={
+                                        upVotes.length > 0
+                                          ? `Voted by ${upVotes.map((v) => v.voterName).join(', ')}`
+                                          : 'Vote for this stop'
+                                      }
+                                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-[11px] font-semibold transition-colors cursor-pointer ${
+                                        myVote === 'up'
+                                          ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                                          : 'bg-white text-[#5A626A] border-black/[0.08] hover:border-[#0E2034] hover:text-[#14191F]'
+                                      }`}
+                                      style={myVote === 'up' ? { color: '#FFFFFF' } : undefined}
+                                    >
+                                      <ThumbsUp className="w-3 h-3" />
+                                      {upVotes.length > 0 && (
+                                        <span className="font-tabular">{upVotes.length}</span>
+                                      )}
+                                    </button>
+                                  </div>
+                                );
+                              })()}
                               {item.price ? (
                                 <span className="font-tabular text-[14px] font-semibold text-[#14191F]">
                                   ${item.price}

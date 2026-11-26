@@ -286,3 +286,29 @@ export interface LoyaltyProgramEntry {
   memberNumber: string;
   tier?: string;
 }
+
+export type CollabEntityKind = 'hotel' | 'place' | 'activity';
+
+export interface TripVote {
+  entityId: string;
+  entityKind: CollabEntityKind;
+  voterKey: string;
+  voterName: string;
+  vote: 'up' | 'down';
+  createdAt: string;
+}
+
+export interface TripNote {
+  id: string;
+  entityId: string;
+  entityKind: CollabEntityKind;
+  authorKey: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface CollaboratorIdentity {
+  key: string;
+  name: string;
+}

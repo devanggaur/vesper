@@ -327,9 +327,11 @@ tripsRoutes.get('/slug/:slug', async (c) => {
   const trip = await store.getTripBySlug(slug);
   if (!trip) return c.json({ error: 'Shared trip not found' }, 404);
 
-  const [items, messages] = await Promise.all([
+  const [items, messages, votes, notes] = await Promise.all([
     store.getTripItems(trip.id),
     store.getMessages(trip.id),
+    store.getTripVotes(trip.id),
+    store.getTripNotes(trip.id),
   ]);
 
   return c.json({
@@ -350,6 +352,8 @@ tripsRoutes.get('/slug/:slug', async (c) => {
     },
     items,
     messages,
+    votes,
+    notes,
   });
 });
 
@@ -361,15 +365,17 @@ tripsRoutes.post('/:id/claim', async (c) => {
   return c.json({ ok: claimed });
 });
 
-/** GET /api/trips/:id — Loads a full trip with cached catalog, items, and chat history ($0 API cost). */
+/** GET /api/trips/:id — Loads a full trip with cached catalog, items, chat history, votes & notes ($0 API cost). */
 tripsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const trip = await store.getTrip(id);
   if (!trip) return c.json({ error: 'Trip not found' }, 404);
 
-  const [items, messages] = await Promise.all([
+  const [items, messages, votes, notes] = await Promise.all([
     store.getTripItems(id),
     store.getMessages(id),
+    store.getTripVotes(id),
+    store.getTripNotes(id),
   ]);
 
   return c.json({
@@ -390,7 +396,59 @@ tripsRoutes.get('/:id', async (c) => {
     },
     items,
     messages,
+    votes,
+    notes,
   });
+});
+
+/* ── Group Collaboration: Votes & Contextual Notes ──────────────────────── */
+
+const voteSchema = z.object({
+  entityId: z.string().min(1),
+  entityKind: z.enum(['hotel', 'place', 'activity']),
+  voterKey: z.string().min(1).max(120),
+  voterName: z.string().min(1).max(60),
+  vote: z.enum(['up', 'down', 'clear']),
+});
+
+const noteSchema = z.object({
+  entityId: z.string().min(1),
+  entityKind: z.enum(['hotel', 'place', 'activity']),
+  authorKey: z.string().min(1).max(120),
+  authorName: z.string().min(1).max(60),
+  body: z.string().min(1).max(280),
+});
+
+tripsRoutes.get('/:id/collaboration', async (c) => {
+  const id = c.req.param('id');
+  const [votes, notes] = await Promise.all([
+    store.getTripVotes(id),
+    store.getTripNotes(id),
+  ]);
+  return c.json({ votes, notes });
+});
+
+tripsRoutes.post('/:id/votes', async (c) => {
+  const id = c.req.param('id');
+  const body = voteSchema.parse(await c.req.json());
+  const votes = await store.setTripVote(id, body);
+  return c.json({ votes });
+});
+
+tripsRoutes.post('/:id/notes', async (c) => {
+  const id = c.req.param('id');
+  const body = noteSchema.parse(await c.req.json());
+  const notes = await store.addTripNote(id, body);
+  return c.json({ notes });
+});
+
+tripsRoutes.delete('/:id/notes/:noteId', async (c) => {
+  const id = c.req.param('id');
+  const noteId = c.req.param('noteId');
+  const authorKey = c.req.query('authorKey') || '';
+  if (!authorKey) return c.json({ error: 'authorKey required' }, 400);
+  const notes = await store.deleteTripNote(id, noteId, authorKey);
+  return c.json({ notes });
 });
 
 const createTripSchema = z.object({
@@ -822,7 +880,11 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
     inspectingEntity?: { kind: string; name: string; details?: string } | null;
   };
 
-  const priorMessages = await store.getMessages(id);
+  const [priorMessages, tripVotes, tripNotes] = await Promise.all([
+    store.getMessages(id),
+    store.getTripVotes(id),
+    store.getTripNotes(id),
+  ]);
   const recentHistory = priorMessages.slice(-8).map((m) => ({
     role: m.role,
     text:
@@ -831,6 +893,35 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
         .map((b) => (b.type === 'text' ? b.content : b.type === 'bullets' ? b.intro || '' : ''))
         .join(' '),
   }));
+
+  // Summarize group votes & notes for Co-Pilot consensus awareness
+  const voteMap = new Map<
+    string,
+    { entityId: string; kind: string; upvotes: number; downvotes: number; voters: string[] }
+  >();
+  for (const v of tripVotes) {
+    const cur = voteMap.get(v.entityId) || {
+      entityId: v.entityId,
+      kind: v.entityKind,
+      upvotes: 0,
+      downvotes: 0,
+      voters: [],
+    };
+    if (v.vote === 'up') cur.upvotes += 1;
+    else cur.downvotes += 1;
+    cur.voters.push(`${v.voterName} (${v.vote})`);
+    voteMap.set(v.entityId, cur);
+  }
+  const groupSummary = {
+    topVotes: Array.from(voteMap.values())
+      .sort((a, b) => b.upvotes - a.upvotes)
+      .slice(0, 8),
+    recentNotes: tripNotes.slice(-8).map((n) => ({
+      entityId: n.entityId,
+      author: n.authorName,
+      body: n.body,
+    })),
+  };
 
   return streamSSE(c, async (stream) => {
     try {
@@ -842,6 +933,7 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
         savedItems: body.savedItems || [],
         activeTab: body.activeTab || 'discover',
         inspectingEntity: body.inspectingEntity,
+        groupSummary,
         recentHistory,
         onTextDelta: (text) => {
           stream.writeSSE({ event: 'delta', data: JSON.stringify({ text }) }).catch(() => {});

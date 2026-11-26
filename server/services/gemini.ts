@@ -574,6 +574,10 @@ export async function streamCoPilotTurn(params: {
   savedItems: TripSavedItem[];
   activeTab: string;
   inspectingEntity?: { kind: string; name: string; details?: string } | null;
+  groupSummary?: {
+    topVotes: Array<{ entityId: string; kind: string; upvotes: number; downvotes: number; voters: string[] }>;
+    recentNotes: Array<{ entityId: string; author: string; body: string }>;
+  };
   recentHistory: Array<{ role: string; text: string }>;
   onTextDelta: (chunk: string) => void;
 }): Promise<{ fullText: string; meta: StreamCoPilotMetadata }> {
@@ -591,6 +595,10 @@ export async function streamCoPilotTurn(params: {
       day: i.day,
       time: i.time || null,
     })),
+    ...(params.groupSummary &&
+    (params.groupSummary.topVotes.length > 0 || params.groupSummary.recentNotes.length > 0)
+      ? { groupVotesAndNotes: params.groupSummary }
+      : {}),
     recentConversation: params.recentHistory.slice(-6),
   };
 

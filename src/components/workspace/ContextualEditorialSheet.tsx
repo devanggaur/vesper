@@ -31,16 +31,24 @@ import {
   AlertTriangle,
   CheckCircle2,
   CalendarCheck,
+  ThumbsUp,
+  ThumbsDown,
+  Send,
+  Trash2,
 } from 'lucide-react';
 import {
   ActivityItem,
   BookingStatus,
+  CollabEntityKind,
   HotelItem,
   HotelRoom,
   PlaceItem,
   TripDayMeta,
+  TripNote,
   TripSavedItem,
+  TripVote,
 } from '../../types/travel';
+import { getInitials } from './GroupShareModal';
 import { DEFAULT_CDMX_DAYS } from '../../services/travelApi';
 import {
   analyzeTripHoursAvailability,
@@ -66,6 +74,9 @@ interface ContextualEditorialSheetProps {
   datesLabel?: string;
   days?: TripDayMeta[];
   savedItem?: TripSavedItem | null;
+  votes?: TripVote[];
+  notes?: TripNote[];
+  voterKey?: string;
   isPlaceSaved: boolean;
   isLiked: boolean;
   onClose: () => void;
@@ -74,6 +85,9 @@ interface ContextualEditorialSheetProps {
   onAddActivity: (activity: ActivityItem, day: string, time: string, endTime: string, guests: number, total: number) => void;
   onAddHotel: (hotel: HotelItem, room: HotelRoom, price: number) => void;
   onUpdateBookingStatus?: (itemId: string, status: BookingStatus, confirmationCode?: string) => void;
+  onVote?: (entityId: string, kind: CollabEntityKind, vote: 'up' | 'down' | 'clear') => void;
+  onAddNote?: (entityId: string, kind: CollabEntityKind, body: string) => void;
+  onDeleteNote?: (noteId: string) => void;
   onAskVesper: (question: string) => void;
   onNotify: (msg: string) => void;
 }
@@ -101,6 +115,9 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
   datesLabel,
   days = DEFAULT_CDMX_DAYS,
   savedItem,
+  votes = [],
+  notes = [],
+  voterKey,
   isPlaceSaved,
   isLiked,
   onClose,
@@ -109,6 +126,9 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
   onAddActivity,
   onAddHotel,
   onUpdateBookingStatus,
+  onVote,
+  onAddNote,
+  onDeleteNote,
   onAskVesper,
   onNotify,
 }) => {
@@ -138,9 +158,16 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
   const [roomPhotoIdx, setRoomPhotoIdx] = useState(0);
 
   const [isAdding, setIsAdding] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
 
   const itemId = target.item.id;
+  const itemKind: CollabEntityKind = target.kind;
   const itemName = target.kind === 'activity' ? target.item.title : target.item.name;
+  const entityVotes = votes.filter((v) => v.entityId === itemId);
+  const upVotes = entityVotes.filter((v) => v.vote === 'up');
+  const downVotes = entityVotes.filter((v) => v.vote === 'down');
+  const myEntityVote = voterKey ? entityVotes.find((v) => v.voterKey === voterKey)?.vote : undefined;
+  const entityNotes = notes.filter((n) => n.entityId === itemId);
 
   const jumpToHotelSection = (secId: string) => {
     setHotelSection(secId);
@@ -1119,6 +1146,145 @@ export const ContextualEditorialSheet: React.FC<ContextualEditorialSheetProps> =
               </>
             );
           })()}
+
+          {/* ── GROUP VOTES & CONTEXTUAL NOTES (All Places, Activities & Hotels) ── */}
+          {onVote && onAddNote && (
+            <section className="rounded-[22px] bg-white border border-black/[0.08] p-4 sm:p-5 space-y-3.5 shadow-2xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-[14px] font-semibold text-[#14191F]">
+                    Group votes &amp; notes
+                  </h3>
+                  <p className="text-[11.5px] text-[#7B828A]">
+                    Weigh in on {itemName} — visible to everyone on your shared trip link.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onVote(itemId, itemKind, myEntityVote === 'up' ? 'clear' : 'up')
+                    }
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-colors cursor-pointer ${
+                      myEntityVote === 'up'
+                        ? 'bg-[#0E2034] text-white border-[#0E2034]'
+                        : 'bg-[#FAF9F5] text-[#14191F] border-black/[0.1] hover:border-[#0E2034]'
+                    }`}
+                    style={myEntityVote === 'up' ? { color: '#FFFFFF' } : undefined}
+                  >
+                    <ThumbsUp className="w-3.5 h-3.5" />
+                    <span>Love it</span>
+                    {upVotes.length > 0 && (
+                      <span className="font-tabular">{upVotes.length}</span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onVote(itemId, itemKind, myEntityVote === 'down' ? 'clear' : 'down')
+                    }
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-colors cursor-pointer ${
+                      myEntityVote === 'down'
+                        ? 'bg-rose-600 text-white border-rose-600'
+                        : 'bg-[#FAF9F5] text-[#5A626A] border-black/[0.1] hover:border-rose-400 hover:text-rose-700'
+                    }`}
+                    style={myEntityVote === 'down' ? { color: '#FFFFFF' } : undefined}
+                  >
+                    <ThumbsDown className="w-3.5 h-3.5" />
+                    <span>Skip</span>
+                    {downVotes.length > 0 && (
+                      <span className="font-tabular">{downVotes.length}</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {entityVotes.length > 0 && (
+                <div className="flex items-center flex-wrap gap-1.5 pt-0.5">
+                  {entityVotes.map((v) => (
+                    <span
+                      key={`${v.voterKey}-${v.entityId}`}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                        v.vote === 'up'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
+                          : 'bg-rose-50 text-rose-700 border-rose-200/80'
+                      }`}
+                    >
+                      <span className="w-4 h-4 rounded-full bg-black/10 text-[9px] font-bold flex items-center justify-center">
+                        {getInitials(v.voterName)}
+                      </span>
+                      <span>{v.voterName}</span>
+                      <span>{v.vote === 'up' ? '👍' : '👎'}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {entityNotes.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  {entityNotes.map((n) => (
+                    <div
+                      key={n.id}
+                      className="rounded-xl bg-[#FAF9F5] border border-black/[0.06] px-3 py-2 flex items-start justify-between gap-2"
+                    >
+                      <div className="flex items-start gap-2 min-w-0">
+                        <span className="w-5 h-5 rounded-full bg-[#0E2034] text-white text-[9.5px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                          {getInitials(n.authorName)}
+                        </span>
+                        <div className="min-w-0 text-[12.5px] leading-snug">
+                          <span className="font-semibold text-[#14191F] mr-1.5">
+                            {n.authorName}
+                          </span>
+                          <span className="text-[#2C333A]">{n.body}</span>
+                        </div>
+                      </div>
+                      {onDeleteNote && voterKey && n.authorKey === voterKey && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteNote(n.id)}
+                          title="Delete note"
+                          className="p-1 rounded-md hover:bg-black/[0.06] text-[#7B828A] hover:text-rose-600 cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const clean = noteDraft.trim();
+                  if (!clean) return;
+                  onAddNote(itemId, itemKind, clean);
+                  setNoteDraft('');
+                }}
+                className="flex items-center gap-2 pt-1"
+              >
+                <input
+                  type="text"
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  placeholder="Add a 1-line note for the group (e.g. Great for Saturday morning!)"
+                  maxLength={280}
+                  className="flex-1 rounded-full bg-[#FAF9F5] border border-black/[0.1] px-3.5 py-2 text-[12.5px] text-[#14191F] placeholder:text-[#8A9097] focus:outline-none focus:border-[#0E2034]"
+                />
+                <button
+                  type="submit"
+                  disabled={!noteDraft.trim()}
+                  aria-label="Post group note"
+                  className="w-9 h-9 rounded-full bg-[#0E2034] hover:bg-[#17304D] disabled:opacity-40 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
+                  style={{ color: '#FFFFFF' }}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            </section>
+          )}
         </div>
       </div>
 

@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BedDouble, Plane, ArrowRight, CheckCircle2, Award, X, Sparkles, ExternalLink } from 'lucide-react';
+import { BedDouble, Plane, ArrowRight, CheckCircle2, Award, X, Sparkles, ExternalLink, Users } from 'lucide-react';
 import {
+  CollabEntityKind,
   FareClass,
   FlightOption,
   HotelItem,
   LoyaltyProgramEntry,
+  TripNote,
   TripSavedItem,
+  TripVote,
 } from '../../types/travel';
 import { LiveHotelSearchResponse, travelApi } from '../../services/travelApi';
 import { HotelComparisonTable, HotelSearchCarousel } from './DiscoverCarousels';
@@ -25,6 +28,11 @@ interface CanvasBookingsProps {
   hotels?: HotelItem[];
   items: TripSavedItem[];
   likedIds: Set<string>;
+  votes?: TripVote[];
+  notes?: TripNote[];
+  voterKey?: string;
+  onVote?: (entityId: string, kind: CollabEntityKind, vote: 'up' | 'down' | 'clear') => void;
+  onOpenSharePoll?: () => void;
   onToggleLike: (id: string) => void;
   onOpenHotel: (hotel: HotelItem, openRooms?: boolean) => void;
   onAddFlights: (outbound: FlightOption, inbound: FlightOption, fare: FareClass) => void;
@@ -49,6 +57,11 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
   hotels: liveHotels,
   items,
   likedIds,
+  votes = [],
+  notes = [],
+  voterKey,
+  onVote,
+  onOpenSharePoll,
   onToggleLike,
   onOpenHotel,
   onAddFlights,
@@ -339,20 +352,32 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
               </span>
             </span>
 
-            <a
-              href={
-                liveHotelRes?.googleHotelsUrl ||
-                `https://www.google.com/travel/hotels?q=${encodeURIComponent(
-                  `hotels in ${destination} ${datesLabel}`
-                )}`
-              }
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#14191F] hover:underline"
-            >
-              <span>Live Google Hotels</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
+            <div className="flex items-center gap-3">
+              {onOpenSharePoll && (
+                <button
+                  type="button"
+                  onClick={onOpenSharePoll}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-[#FAF9F5] border border-black/[0.1] text-[12px] font-semibold text-[#14191F] transition-colors cursor-pointer"
+                >
+                  <Users className="w-3.5 h-3.5 text-[#C85A17]" />
+                  <span>Poll group on stays</span>
+                </button>
+              )}
+              <a
+                href={
+                  liveHotelRes?.googleHotelsUrl ||
+                  `https://www.google.com/travel/hotels?q=${encodeURIComponent(
+                    `hotels in ${destination} ${datesLabel}`
+                  )}`
+                }
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#14191F] hover:underline"
+              >
+                <span>Live Google Hotels</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
           </div>
 
           <HotelSearchCarousel
@@ -361,6 +386,10 @@ export const CanvasBookings: React.FC<CanvasBookingsProps> = ({
             guests={`1 room, ${travelers}`}
             hotels={hotels}
             likedIds={likedIds}
+            votes={votes}
+            notes={notes}
+            voterKey={voterKey}
+            onVote={onVote}
             onToggleLike={onToggleLike}
             onOpenHotel={onOpenHotel}
             onHoverId={onHoverId}

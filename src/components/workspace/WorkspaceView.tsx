@@ -15,6 +15,8 @@ import {
   ActivityItem,
   BookingStatus,
   ChatMessage,
+  CollabEntityKind,
+  CollaboratorIdentity,
   Coordinates,
   DiscoverSection,
   FareClass,
@@ -24,7 +26,9 @@ import {
   LoyaltyProgramEntry,
   PlaceItem,
   TripDayMeta,
+  TripNote,
   TripSavedItem,
+  TripVote,
 } from '../../types/travel';
 import { DEFAULT_CDMX_DAYS, travelApi } from '../../services/travelApi';
 import { inferActivityBookingType, inferPlaceBookingType } from '../../utils/bookingHelpers';
@@ -38,6 +42,7 @@ import { InteractiveMap } from './InteractiveMap';
 import { ContextualEditorialSheet, EditorialSheetTarget } from './ContextualEditorialSheet';
 import { BookingCheckoutModal } from './BookingCheckoutModal';
 import { CoPilotRail } from './CoPilotRail';
+import { CollabNamePromptModal, GroupShareModal } from './GroupShareModal';
 
 export type CanvasTab = 'discover' | 'timeline' | 'map' | 'bookings';
 
@@ -51,6 +56,7 @@ interface WorkspaceViewProps {
   savedDefaultTaste?: TasteProfile | null;
   homeAirport?: string;
   loyaltyPrograms?: LoyaltyProgramEntry[];
+  userProfile?: { email: string; name?: string; avatarUrl?: string } | null;
   onChangeHomeAirport?: (airport: string) => void;
   onSaveDefaultTaste?: (profile: TasteProfile) => void;
   onOpenLoyaltyWallet?: (category: 'hotel' | 'airline') => void;
@@ -82,6 +88,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   savedDefaultTaste,
   homeAirport,
   loyaltyPrograms = [],
+  userProfile,
   onChangeHomeAirport,
   onSaveDefaultTaste,
   onOpenLoyaltyWallet,
@@ -133,7 +140,52 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   // Trip items & interaction state
   const [savedItems, setSavedItems] = useState<TripSavedItem[]>([]);
+  const [votes, setVotes] = useState<TripVote[]>([]);
+  const [notes, setNotes] = useState<TripNote[]>([]);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [guestCollaborator, setGuestCollaborator] = useState<CollaboratorIdentity | null>(() => {
+    try {
+      const raw =
+        typeof window !== 'undefined'
+          ? window.localStorage.getItem('vesper-collab-identity')
+          : null;
+      if (raw) return JSON.parse(raw) as CollaboratorIdentity;
+    } catch {
+      // Ignore storage error
+    }
+    return null;
+  });
+  const [pendingCollabAction, setPendingCollabAction] = useState<{
+    label: string;
+    run: (identity: CollaboratorIdentity) => void;
+  } | null>(null);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
+
+  const effectiveCollaborator: CollaboratorIdentity | null = useMemo(() => {
+    if (guestCollaborator) return guestCollaborator;
+    if (userProfile?.email) {
+      const first =
+        userProfile.name?.trim().split(/\s+/)[0] || userProfile.email.split('@')[0] || 'Traveler';
+      return { key: userProfile.email.toLowerCase(), name: first };
+    }
+    return null;
+  }, [guestCollaborator, userProfile]);
+
+  const saveCollaboratorName = (name: string): CollaboratorIdentity => {
+    const clean = name.trim();
+    const key =
+      effectiveCollaborator?.key ||
+      userProfile?.email?.toLowerCase() ||
+      `guest-${Math.random().toString(36).slice(2, 10)}`;
+    const next: CollaboratorIdentity = { key, name: clean };
+    setGuestCollaborator(next);
+    try {
+      window.localStorage.setItem('vesper-collab-identity', JSON.stringify(next));
+    } catch {
+      // Ignore storage error
+    }
+    return next;
+  };
   const [isOrganizing, setIsOrganizing] = useState(false);
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [sheetTarget, setSheetTarget] = useState<EditorialSheetTarget | null>(null);
@@ -170,7 +222,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         : travelApi.getTrip(existingTripId!);
 
       loader
-        .then(({ trip, items, messages: savedMsgs }) => {
+        .then(({ trip, items, messages: savedMsgs, votes: savedVotes, notes: savedNotes }) => {
           if (cancelled) return;
           setThinkingLabel(null);
           setLiveTripId(trip.id);
@@ -183,6 +235,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           setMapCenter(trip.center);
           if (trip.heroImage) setHeroImage(trip.heroImage);
           if (trip.tasteProfile) setTasteProfile(trip.tasteProfile);
+          const urlViewParam =
+            typeof window !== 'undefined'
+              ? new URLSearchParams(window.location.search).get('view')
+              : null;
           if (trip.catalog) {
             setActivitiesTitle(trip.catalog.activitiesTitle);
             setActivities(trip.catalog.activities);
@@ -190,13 +246,20 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             setDiscoverSections(trip.catalog.sections);
             setHotels(trip.catalog.hotels);
             setTasteCalibrated(true);
-            // If opening a shared trip that already has scheduled stops, open straight to Timeline!
-            if (existingTripSlug && (items || []).length > 0) {
+            if (urlViewParam === 'stays') {
+              setActiveTab('bookings');
+              setBookingsSubTab('stays');
+            } else if (urlViewParam === 'flights') {
+              setActiveTab('bookings');
+              setBookingsSubTab('flights');
+            } else if (existingTripSlug && (items || []).length > 0) {
               setActiveTab('timeline');
             }
           } else {
             setTasteCalibrated(false);
           }
+          setVotes(savedVotes || []);
+          setNotes(savedNotes || []);
           const catPlaces = trip.catalog?.places || [];
           const catActivities = trip.catalog?.activities || [];
           const hydratedItems = (items || []).map((item): TripSavedItem => {
@@ -826,6 +889,98 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     });
   };
 
+  /* ── Group Collaboration Handlers (Zero-Login Votes & Contextual Notes) ── */
+  const runWithCollaborator = (
+    actionLabel: string,
+    fn: (identity: CollaboratorIdentity) => void
+  ) => {
+    if (effectiveCollaborator) {
+      fn(effectiveCollaborator);
+    } else {
+      setPendingCollabAction({ label: actionLabel, run: fn });
+    }
+  };
+
+  const handleCollabVote = (
+    entityId: string,
+    entityKind: CollabEntityKind,
+    vote: 'up' | 'down' | 'clear'
+  ) => {
+    runWithCollaborator('voted', (identity) => {
+      setVotes((prev) => {
+        const filtered = prev.filter(
+          (v) => !(v.entityId === entityId && v.voterKey === identity.key)
+        );
+        if (vote === 'clear') return filtered;
+        return [
+          ...filtered,
+          {
+            entityId,
+            entityKind,
+            voterKey: identity.key,
+            voterName: identity.name,
+            vote,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      });
+      if (liveTripId) {
+        travelApi
+          .setTripVote(liveTripId, {
+            entityId,
+            entityKind,
+            voterKey: identity.key,
+            voterName: identity.name,
+            vote,
+          })
+          .then((serverVotes) => setVotes(serverVotes))
+          .catch(() => {});
+      }
+      if (vote !== 'clear') {
+        onNotify(`${identity.name} voted ${vote === 'up' ? '👍' : '👎'}`);
+      }
+    });
+  };
+
+  const handleCollabAddNote = (entityId: string, entityKind: CollabEntityKind, body: string) => {
+    runWithCollaborator('left a note', (identity) => {
+      const tempNote: TripNote = {
+        id: `temp-${Date.now()}`,
+        entityId,
+        entityKind,
+        authorKey: identity.key,
+        authorName: identity.name,
+        body,
+        createdAt: new Date().toISOString(),
+      };
+      setNotes((prev) => [...prev, tempNote]);
+      if (liveTripId) {
+        travelApi
+          .addTripNote(liveTripId, {
+            entityId,
+            entityKind,
+            authorKey: identity.key,
+            authorName: identity.name,
+            body,
+          })
+          .then((serverNotes) => setNotes(serverNotes))
+          .catch(() => {});
+      }
+      onNotify('Note added for your group');
+    });
+  };
+
+  const handleCollabDeleteNote = (noteId: string) => {
+    if (!effectiveCollaborator) return;
+    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+    if (liveTripId) {
+      travelApi
+        .deleteTripNote(liveTripId, noteId, effectiveCollaborator.key)
+        .then((serverNotes) => setNotes(serverNotes))
+        .catch(() => {});
+    }
+  };
+
   const handleInspectTimelineItem = (item: TripSavedItem) => {
     if (item.type === 'place') {
       const p = places.find((x) => x.id === item.refId) || travelApi.findPlaceById(item.refId);
@@ -955,16 +1110,18 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             {liveTripSlug && (
               <button
                 type="button"
-                onClick={() => {
-                  const url = `${window.location.origin}/t/${liveTripSlug}`;
-                  navigator.clipboard?.writeText(url).catch(() => {});
-                  onNotify(`Copied share link: /t/${liveTripSlug}`);
-                }}
-                title="Copy shareable trip link"
-                aria-label="Copy shareable trip link"
-                className="w-8 h-8 rounded-full bg-white hover:bg-black/[0.04] border border-black/[0.09] flex items-center justify-center text-[#2C333A] transition-colors cursor-pointer shrink-0"
+                onClick={() => setShowShareModal(true)}
+                title="Share trip & group vote"
+                aria-label="Share trip and group vote"
+                className="relative h-8 px-2.5 rounded-full bg-white hover:bg-black/[0.04] border border-black/[0.09] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#2C333A] transition-colors cursor-pointer shrink-0"
               >
                 <Share2 className="w-3.5 h-3.5 text-[#5A626A]" />
+                <span className="hidden sm:inline">Share</span>
+                {votes.length + notes.length > 0 && (
+                  <span className="font-tabular min-w-[16px] h-[16px] px-1 rounded-full bg-[#C85A17] text-white text-[10px] font-bold flex items-center justify-center">
+                    {votes.length + notes.length}
+                  </span>
+                )}
               </button>
             )}
             <ThemeSwitcher theme={theme} onChange={onChangeTheme} compact />
@@ -1120,7 +1277,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   heroImage={heroImage}
                   days={days}
                   items={savedItems}
+                  votes={votes}
+                  notes={notes}
+                  voterKey={effectiveCollaborator?.key}
                   isOrganizing={isOrganizing}
+                  onVote={handleCollabVote}
+                  onOpenShareModal={() => setShowShareModal(true)}
                   onSearchFlights={() => {
                     setBookingsSubTab('flights');
                     setActiveTab('bookings');
@@ -1170,6 +1332,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   hotels={hotels}
                   items={savedItems}
                   likedIds={likedIds}
+                  votes={votes}
+                  notes={notes}
+                  voterKey={effectiveCollaborator?.key}
+                  onVote={handleCollabVote}
+                  onOpenSharePoll={() => setShowShareModal(true)}
                   onToggleLike={handleToggleLike}
                   onOpenHotel={(h, openRooms = false) =>
                     setSheetTarget({ kind: 'hotel', item: h, focusRooms: openRooms })
@@ -1192,6 +1359,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 datesLabel={datesLabel}
                 days={days}
                 savedItem={savedItems.find((i) => i.refId === sheetTarget.item.id) || null}
+                votes={votes}
+                notes={notes}
+                voterKey={effectiveCollaborator?.key}
                 isPlaceSaved={
                   sheetTarget.kind === 'place' ? savedRefIds.has(sheetTarget.item.id) : false
                 }
@@ -1202,6 +1372,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 onAddActivity={handleAddActivity}
                 onAddHotel={handleAddHotel}
                 onUpdateBookingStatus={handleUpdateItemBookingStatus}
+                onVote={handleCollabVote}
+                onAddNote={handleCollabAddNote}
+                onDeleteNote={handleCollabDeleteNote}
                 onAskVesper={(q) => {
                   setMobileCopilotOpen(true);
                   handleCoPilotSend(q);
@@ -1330,6 +1503,46 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             onUpdateBookingStatus={handleUpdateItemBookingStatus}
             onClose={() => setShowBookingModal(false)}
             onSuccess={() => onNotify(`Trip confirmed for ${destination}!`)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── GROUP SHARE & POLL MODAL ────────────────────────────────────── */}
+      <AnimatePresence>
+        {showShareModal && (
+          <GroupShareModal
+            tripTitle={tripTitle}
+            destination={destination}
+            datesLabel={datesLabel}
+            tripSlug={liveTripSlug}
+            votes={votes}
+            notes={notes}
+            collaborator={effectiveCollaborator}
+            onSaveCollaboratorName={(name) => saveCollaboratorName(name)}
+            onAskCoPilotConsensus={() => {
+              setMobileCopilotOpen(true);
+              handleCoPilotSend(
+                'Summarize our group votes and notes, and recommend which stay and stops we should lock in.'
+              );
+            }}
+            onNotify={onNotify}
+            onClose={() => setShowShareModal(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── ZERO-LOGIN GUEST NAME PROMPT (1-time, 5 seconds) ────────────── */}
+      <AnimatePresence>
+        {pendingCollabAction && (
+          <CollabNamePromptModal
+            actionLabel={pendingCollabAction.label}
+            onSubmitName={(name) => {
+              const identity = saveCollaboratorName(name);
+              const pending = pendingCollabAction;
+              setPendingCollabAction(null);
+              pending.run(identity);
+            }}
+            onClose={() => setPendingCollabAction(null)}
           />
         )}
       </AnimatePresence>

@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 import { config } from '../config';
-import type { ChatMessage, TripSavedItem } from '../../src/types/travel';
+import type { ChatMessage, TripNote, TripSavedItem, TripVote } from '../../src/types/travel';
 
 export interface TripDayRecord {
   key: string;
@@ -72,6 +72,8 @@ class VesperStore {
   private memTrips = new Map<string, StoredTrip>();
   private memItems = new Map<string, TripSavedItem[]>();
   private memMessages = new Map<string, ChatMessage[]>();
+  private memVotes = new Map<string, TripVote[]>();
+  private memNotes = new Map<string, TripNote[]>();
   private memCache = new Map<string, { payload: unknown; expiresAt: number }>();
 
   constructor() {
@@ -510,6 +512,163 @@ class VesperStore {
         .upsert(rows, { onConflict: 'trip_id,id' });
       if (error) console.warn('[vesper-store] appendMessages error:', error.message);
     }
+  }
+
+  /* ── Group Collaboration: Votes & Contextual Notes ────────────────────── */
+
+  async getTripVotes(tripId: string): Promise<TripVote[]> {
+    if (await this.ensureChecked()) {
+      const { data, error } = await this.client!
+        .from('trip_votes')
+        .select('entity_id, entity_kind, voter_key, voter_name, vote, created_at')
+        .eq('trip_id', tripId)
+        .order('created_at', { ascending: true });
+      if (!error && data) {
+        const mapped: TripVote[] = data.map((row) => ({
+          entityId: row.entity_id,
+          entityKind: row.entity_kind,
+          voterKey: row.voter_key,
+          voterName: row.voter_name,
+          vote: row.vote,
+          createdAt: row.created_at,
+        }));
+        this.memVotes.set(tripId, mapped);
+        return mapped;
+      }
+    }
+    return this.memVotes.get(tripId) ?? [];
+  }
+
+  async setTripVote(
+    tripId: string,
+    params: {
+      entityId: string;
+      entityKind: 'hotel' | 'place' | 'activity';
+      voterKey: string;
+      voterName: string;
+      vote: 'up' | 'down' | 'clear';
+    }
+  ): Promise<TripVote[]> {
+    const existing = await this.getTripVotes(tripId);
+    const filtered = existing.filter(
+      (v) => !(v.entityId === params.entityId && v.voterKey === params.voterKey)
+    );
+    const next: TripVote[] =
+      params.vote === 'clear'
+        ? filtered
+        : [
+            ...filtered,
+            {
+              entityId: params.entityId,
+              entityKind: params.entityKind,
+              voterKey: params.voterKey,
+              voterName: params.voterName,
+              vote: params.vote,
+              createdAt: new Date().toISOString(),
+            },
+          ];
+    this.memVotes.set(tripId, next);
+
+    if (await this.ensureChecked()) {
+      if (params.vote === 'clear') {
+        await this.client!
+          .from('trip_votes')
+          .delete()
+          .eq('trip_id', tripId)
+          .eq('entity_id', params.entityId)
+          .eq('voter_key', params.voterKey);
+      } else {
+        await this.client!.from('trip_votes').upsert(
+          {
+            trip_id: tripId,
+            entity_id: params.entityId,
+            entity_kind: params.entityKind,
+            voter_key: params.voterKey,
+            voter_name: params.voterName,
+            vote: params.vote,
+          },
+          { onConflict: 'trip_id,entity_id,voter_key' }
+        );
+      }
+    }
+    return next;
+  }
+
+  async getTripNotes(tripId: string): Promise<TripNote[]> {
+    if (await this.ensureChecked()) {
+      const { data, error } = await this.client!
+        .from('trip_notes')
+        .select('id, entity_id, entity_kind, author_key, author_name, body, created_at')
+        .eq('trip_id', tripId)
+        .order('created_at', { ascending: true });
+      if (!error && data) {
+        const mapped: TripNote[] = data.map((row) => ({
+          id: row.id,
+          entityId: row.entity_id,
+          entityKind: row.entity_kind,
+          authorKey: row.author_key,
+          authorName: row.author_name,
+          body: row.body,
+          createdAt: row.created_at,
+        }));
+        this.memNotes.set(tripId, mapped);
+        return mapped;
+      }
+    }
+    return this.memNotes.get(tripId) ?? [];
+  }
+
+  async addTripNote(
+    tripId: string,
+    params: {
+      entityId: string;
+      entityKind: 'hotel' | 'place' | 'activity';
+      authorKey: string;
+      authorName: string;
+      body: string;
+    }
+  ): Promise<TripNote[]> {
+    const existing = await this.getTripNotes(tripId);
+    const note: TripNote = {
+      id: `note-${crypto.randomBytes(4).toString('hex')}`,
+      entityId: params.entityId,
+      entityKind: params.entityKind,
+      authorKey: params.authorKey,
+      authorName: params.authorName,
+      body: params.body.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    const next = [...existing, note];
+    this.memNotes.set(tripId, next);
+
+    if (await this.ensureChecked()) {
+      await this.client!.from('trip_notes').insert({
+        id: note.id,
+        trip_id: tripId,
+        entity_id: note.entityId,
+        entity_kind: note.entityKind,
+        author_key: note.authorKey,
+        author_name: note.authorName,
+        body: note.body,
+      });
+    }
+    return next;
+  }
+
+  async deleteTripNote(tripId: string, noteId: string, authorKey: string): Promise<TripNote[]> {
+    const existing = await this.getTripNotes(tripId);
+    const next = existing.filter((n) => !(n.id === noteId && n.authorKey === authorKey));
+    this.memNotes.set(tripId, next);
+
+    if (await this.ensureChecked()) {
+      await this.client!
+        .from('trip_notes')
+        .delete()
+        .eq('trip_id', tripId)
+        .eq('id', noteId)
+        .eq('author_key', authorKey);
+    }
+    return next;
   }
 }
 
