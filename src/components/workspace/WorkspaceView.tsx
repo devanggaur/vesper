@@ -1020,11 +1020,18 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               }
               if (toast) onNotify(toast);
             },
-            onDone: ({ assistantMessage, action }) => {
+            onDone: ({ assistantMessage, action, recommendedPlaces }) => {
               finished = true;
               setThinkingLabel(null);
               setStatusStep(null);
               setStreamingText(null);
+              if (recommendedPlaces && recommendedPlaces.length > 0) {
+                setPlaces((prev) => {
+                  const existing = new Set(prev.map((p) => p.id));
+                  const fresh = recommendedPlaces.filter((p) => !existing.has(p.id));
+                  return fresh.length > 0 ? [...prev, ...fresh] : prev;
+                });
+              }
               setMessages((prev) => [...prev, assistantMessage]);
               applyAction(action);
             },

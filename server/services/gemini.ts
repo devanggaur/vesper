@@ -757,10 +757,20 @@ export type ItineraryMutation =
   | { op: 'remove_item'; titleQuery: string }
   | { op: 'move_item'; titleQuery: string; day: string; time?: string };
 
+export interface RecommendedPlaceSpec {
+  query: string;
+  note?: string;
+  category?: string;
+  suggestedDay?: string;
+  bestTime?: string;
+}
+
 export interface StreamCoPilotMetadata {
   suggestions: string[];
   action: CoPilotResponse['action'];
   mutations: ItineraryMutation[];
+  placesTitle?: string;
+  recommendedPlaces: RecommendedPlaceSpec[];
 }
 
 const META_OPEN = '<<<VESPER_META';
@@ -820,29 +830,35 @@ export async function streamCoPilotTurn(params: {
     recentConversation: params.recentHistory.slice(-6),
   };
 
-  const systemInstruction = `You are Vesper, a warm, deeply knowledgeable travel friend and boutique hotel concierge sitting beside an interactive trip canvas (Discover, Timeline, Map, Bookings).
+  const systemInstruction = `You are Vesper, a warm, deeply knowledgeable travel friend and boutique hotel concierge sitting beside an interactive map and trip workspace.
 
 VOICE & WARMTH (MOST IMPORTANT):
 - Write like a cultured, genuinely enthusiastic friend who just spent a month in ${params.destination} and loves sharing their favorite corners—never like a terse booking assistant or form receipt.
 - Open naturally by acknowledging the mood, season, or question (never hollow filler like "Great question!", "Certainly!", or "I'd be happy to help!").
 - Give concrete, sensory, opinionated details: *why* a spot is worth going, the best light or crowd window, what to order, or how it flows with the rest of their day and their tasteProfile (pace, vibes, splurge style, travelers).
-- Format cleanly for easy scanning:
-  - For recommendations, comparisons, or open questions: write a warm 2–3 sentence opener followed by 2–3 crisp markdown bullet points (starting with "- ") or a second short paragraph, and end with one natural conversational question to keep the planning flowing.
-  - For quick itinerary edits (add/remove/move): confirm the change warmly with a brief local tip about timing or what pairs well nearby, plus one gentle follow-up thought.
 - Use **bold** for specific venue/hotel/neighborhood names and *italics* lightly for nuance or atmosphere. Never use raw headings (#) or walls of text.
 
+INTERACTIVE PLACE CARDS (CRITICAL):
+- Whenever the user asks about restaurants, cafes, coffee shops, bakeries, bars, food spots, viewpoints, museums, galleries, shops, parks, beaches, or ANY visitable place(s) that could be inspected or added to their itinerary, ALWAYS return 2 to 5 real, specific venue names in "recommendedPlaces" (plus a crisp 2–5 word "placesTitle" like "Coffee & Pastries in Chiado" or "Sunset Drinks & Dinner").
+- Because Vesper automatically verifies each venue via Google Places and renders interactive photo cards (real photos, star ratings, 1-click "+ Add to Trip", dossier view, and live map pins) directly beneath your message:
+  - Keep your streamed prose warm, evocative, and concise: a 2–3 sentence opener capturing the vibe & timing (mentioning 1–2 standout details), followed by one short conversational question. Do NOT duplicate long bullet-by-bullet descriptions for places that will appear as interactive cards right below!
+- Only leave "recommendedPlaces" empty for pure logistics/general advice (e.g., transit, packing, weather), itinerary edits, or hotel/flight search requests (for stays or flights, use "action":"open_bookings_stays" or "open_bookings_flights" instead).
+
 ITINERARY MUTATIONS:
-If the user asks to ADD a place/restaurant/attraction, REMOVE a stop, MOVE/RESCHEDULE a stop, or SWAP a stop on their itinerary, confirm the change naturally in your reply AND include the exact mutation(s) inside the trailing metadata block.
+If the user explicitly asks to ADD a place/restaurant/attraction, REMOVE a stop, MOVE/RESCHEDULE a stop, or SWAP a stop on their itinerary, confirm the change naturally in your reply AND include the exact mutation(s) inside the trailing metadata block.
 
 Valid day keys for this trip: ${validDays} (or "Any time" if unspecified).
 
 ALWAYS end your response with a single trailing metadata block in this EXACT format (no markdown code fences around it):
 ${META_OPEN}
-{"suggestions":["short follow-up 1","short follow-up 2"],"action":"none","mutations":[]}
+{"suggestions":["short follow-up 1","short follow-up 2"],"action":"none","mutations":[],"placesTitle":"","recommendedPlaces":[]}
 ${META_CLOSE}
 
 Where:
 - "action" is one of: "none", "organize", "open_bookings_stays", "open_bookings_flights", "open_map", "switch_discover", "switch_timeline"
+- "placesTitle" is a short editorial heading (e.g., "Coffee Spots in Chiado") when "recommendedPlaces" is non-empty.
+- "recommendedPlaces" is an array of 0 to 5 real visitable spots to render as interactive photo cards:
+  - {"query":"Exact real venue name (and neighborhood if helpful)","note":"One vivid sentence on why to go or what to order.","category":"food|cafe|bar|museum|viewpoint|landmark|shop","suggestedDay":"Exact valid day key","bestTime":"9:30 AM"}
 - "mutations" is an array of zero or more objects:
   - {"op":"add_place","query":"Exact real place name","day":"Exact valid day key","time":"10:30 AM"}
   - {"op":"remove_item","titleQuery":"Part of existing stop title"}
@@ -910,6 +926,8 @@ Where:
         suggestions: [],
         action: { type: 'none' },
         mutations: [],
+        placesTitle: undefined,
+        recommendedPlaces: [],
       };
 
       const metaStart = rawAccumulated.indexOf(META_OPEN);
@@ -931,6 +949,8 @@ Where:
             suggestions?: string[];
             action?: string;
             mutations?: ItineraryMutation[];
+            placesTitle?: string;
+            recommendedPlaces?: RecommendedPlaceSpec[];
           };
           let action: CoPilotResponse['action'] = { type: 'none' };
           if (parsed.action === 'organize') action = { type: 'organize' };
@@ -940,10 +960,24 @@ Where:
           else if (parsed.action === 'switch_discover') action = { type: 'switch_tab', tab: 'discover' };
           else if (parsed.action === 'switch_timeline') action = { type: 'switch_tab', tab: 'timeline' };
 
+          const cleanRecommended = Array.isArray(parsed.recommendedPlaces)
+            ? parsed.recommendedPlaces
+                .filter(
+                  (p): p is RecommendedPlaceSpec =>
+                    Boolean(p && typeof p.query === 'string' && p.query.trim().length > 1)
+                )
+                .slice(0, 5)
+            : [];
+
           parsedMeta = {
             suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.slice(0, 3) : [],
             action,
             mutations: Array.isArray(parsed.mutations) ? parsed.mutations : [],
+            placesTitle:
+              typeof parsed.placesTitle === 'string' && parsed.placesTitle.trim()
+                ? parsed.placesTitle.trim()
+                : undefined,
+            recommendedPlaces: cleanRecommended,
           };
         } catch (parseErr) {
           console.warn('[gemini-stream] metadata JSON parse skipped:', (parseErr as Error)?.message);

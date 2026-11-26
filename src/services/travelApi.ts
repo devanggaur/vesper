@@ -400,7 +400,11 @@ export const travelApi = {
         addedPlaces: PlaceItem[];
         toast: string;
       }) => void;
-      onDone: (data: { assistantMessage: ChatMessage; action?: CoPilotAction }) => void;
+      onDone: (data: {
+        assistantMessage: ChatMessage;
+        action?: CoPilotAction;
+        recommendedPlaces?: PlaceItem[];
+      }) => void;
     }
   ): Promise<void> {
     const token = await getAccessToken();

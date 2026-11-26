@@ -1158,7 +1158,84 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
         }
       }
 
+      // Verify any AI-recommended places in parallel via Google Places API so chat renders
+      // rich interactive photo cards (+ Add, ratings, dossiers, and live map pins)
+      const recommendedPlaces: PlaceItem[] = [];
+      if (meta.recommendedPlaces && meta.recommendedPlaces.length > 0) {
+        await stream.writeSSE({
+          event: 'status',
+          data: JSON.stringify({ label: 'Pulling live photos, ratings & map pins...' }),
+        });
+
+        const verified = await Promise.all(
+          meta.recommendedPlaces.slice(0, 5).map(async (spec, idx) => {
+            const hits = await searchPlacesCached(
+              `${spec.query} ${trip.destination}`,
+              1,
+              trip.destination
+            );
+            const gp = hits[0];
+            if (!gp) return null;
+            const catText = `${spec.category || ''} ${gp.primaryType}`;
+            const section: PlaceItem['section'] = /food|cafe|café|coffee|bar|bakery|restaurant|dining|pastry|bistro|tapas|wine/i.test(
+              catText
+            )
+              ? 'food'
+              : /museum|gallery|art/i.test(catText)
+              ? 'museums'
+              : 'landmarks';
+            const targetDay = resolveDayKey(spec.suggestedDay, validDayKeys);
+            const curatedPick = spec.note
+              ? {
+                  name: gp.name,
+                  whySpecial: spec.note,
+                  insiderTip: spec.bestTime ? `Best around ${spec.bestTime}.` : 'Worth a stop on your route.',
+                  bestTime: spec.bestTime || (section === 'food' ? '1:00 PM' : '11:00 AM'),
+                  bookingType: (section === 'food'
+                    ? /cafe|café|coffee|bakery|pastel|pastry/i.test(`${gp.name} ${catText}`)
+                      ? 'walk_in'
+                      : 'reservation'
+                    : section === 'museums'
+                    ? 'timed_ticket'
+                    : 'walk_in') as PlaceItem['bookingType'],
+                  advanceLeadTime: section === 'food' ? 'Walk-in or reserve ahead' : 'No booking needed',
+                  estimatedCostUsd: section === 'food' ? 25 : 0,
+                }
+              : undefined;
+            return toPlaceItem(gp, section, trip.destination, targetDay, idx, curatedPick);
+          })
+        );
+
+        const seenIds = new Set<string>();
+        for (const p of verified) {
+          if (p && !seenIds.has(p.id)) {
+            seenIds.add(p.id);
+            recommendedPlaces.push(p);
+          }
+        }
+
+        // Persist newly verified chat places into the trip's catalog so clicking them later
+        // or inspecting them from the Timeline always opens their full dossier & map pin
+        if (recommendedPlaces.length > 0 && trip.catalog) {
+          const cat = trip.catalog as { places?: PlaceItem[] };
+          const existingIds = new Set((cat.places || []).map((p) => p.id));
+          const fresh = recommendedPlaces.filter((p) => !existingIds.has(p.id));
+          if (fresh.length > 0) {
+            await store.updateTrip(trip.id, {
+              catalog: { ...trip.catalog, places: [...(cat.places || []), ...fresh] },
+            });
+          }
+        }
+      }
+
       const blocks: ChatMessage['blocks'] = [{ type: 'text', content: fullText }];
+      if (recommendedPlaces.length > 0) {
+        blocks.push({
+          type: 'places',
+          title: meta.placesTitle,
+          places: recommendedPlaces,
+        });
+      }
       if (meta.suggestions.length > 0) {
         blocks.push({ type: 'suggestions', items: meta.suggestions });
       }
@@ -1176,6 +1253,7 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
         data: JSON.stringify({
           assistantMessage: assistantMsg,
           action: meta.action,
+          recommendedPlaces,
         }),
       });
     } catch (err) {

@@ -208,6 +208,7 @@ export interface TripSavedItem {
 export type ChatBlock =
   | { type: 'text'; content: string }
   | { type: 'bullets'; intro?: string; items: string[]; outro?: string }
+  | { type: 'places'; title?: string; places: PlaceItem[] }
   | { type: 'suggestions'; items: string[] };
 
 export interface ChatMessage {

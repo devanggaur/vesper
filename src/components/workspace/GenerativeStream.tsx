@@ -280,6 +280,23 @@ export const GenerativeStream: React.FC<GenerativeStreamProps> = ({
               </div>
             );
           }
+          if (block.type === 'places' && block.places.length > 0) {
+            return (
+              <div key={bIdx} className="pt-1.5 pb-0.5">
+                <PlaceCarousel
+                  title={block.title}
+                  places={block.places}
+                  compact
+                  savedRefIds={savedRefIds}
+                  likedIds={likedIds}
+                  onToggleSave={onToggleSavePlace}
+                  onToggleLike={onToggleLike}
+                  onSelectPlace={onSelectPlace}
+                  onHoverId={onHoverId}
+                />
+              </div>
+            );
+          }
           if (block.type === 'suggestions') {
             return (
               <div key={bIdx} className="space-y-1.5 pt-1">
