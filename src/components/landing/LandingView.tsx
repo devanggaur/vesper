@@ -2,10 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Menu,
-  Plane,
-  BedDouble,
-  Ticket,
-  Compass,
   Calendar,
   Users,
   Mic,
@@ -15,6 +11,7 @@ import {
   ChevronDown,
   Sparkles,
   User,
+  Briefcase,
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { SmartImage } from '../common/SmartImage';
@@ -37,6 +34,7 @@ import {
 
 interface LandingViewProps {
   userProfile?: { email: string; name?: string; avatarUrl?: string } | null;
+  savedTripsCount?: number;
   onStartTrip: (
     prompt: string,
     focusMode?: 'flights' | 'stays' | 'activities',
@@ -57,6 +55,7 @@ interface LandingViewProps {
  */
 export const LandingView: React.FC<LandingViewProps> = ({
   userProfile,
+  savedTripsCount = 0,
   onStartTrip,
   onOpenSidebar,
   onOpenAuth,
@@ -68,7 +67,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
     getDefaultTripDateSelection()
   );
   const [guestsLabel, setGuestsLabel] = useState('2 adults');
-  const [tripMode, setTripMode] = useState<'full' | 'stays' | 'flights' | 'activities'>('full');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showGuestPicker, setShowGuestPicker] = useState(false);
   const [activeMood, setActiveMood] = useState<MoodCategory>('Anywhere');
@@ -87,8 +85,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
     e?.preventDefault();
     const finalPrompt = (voice.isRecording ? voice.transcript || DEMO_VOICE_PROMPT : prompt).trim();
     voice.reset();
-    const modeArg = tripMode === 'full' ? undefined : tripMode;
-    onStartTrip(finalPrompt || DEMO_VOICE_PROMPT, modeArg, dateSelection.label, guestsLabel);
+    onStartTrip(finalPrompt || DEMO_VOICE_PROMPT, undefined, dateSelection.label, guestsLabel);
   };
 
   const activeMoodObj = MOOD_TABS.find((m) => m.id === activeMood);
@@ -142,47 +139,18 @@ export const LandingView: React.FC<LandingViewProps> = ({
           </div>
         </div>
 
-        {/* Desktop Quick Mode Links */}
-        <nav className="hidden md:flex items-center gap-6 text-[13px] font-medium text-[#4A535C]">
-          {[
-            { id: 'full' as const, label: 'Full Trip', icon: Compass },
-            { id: 'stays' as const, label: 'Stays', icon: BedDouble },
-            { id: 'flights' as const, label: 'Flights', icon: Plane },
-            { id: 'activities' as const, label: 'Things to do', icon: Ticket },
-          ].map((tab) => {
-            const active = tripMode === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setTripMode(tab.id);
-                  if (tab.id === 'stays') {
-                    onStartTrip(
-                      'Find quiet design-focused stays in Mexico City for June 19–21',
-                      'stays',
-                      dateSelection.label
-                    );
-                  } else if (tab.id === 'flights') {
-                    onStartTrip(
-                      'Search round-trip flights from San Francisco to Mexico City for June 19–21',
-                      'flights',
-                      dateSelection.label
-                    );
-                  }
-                }}
-                className={`flex items-center gap-1.5 py-1 transition-colors cursor-pointer ${
-                  active ? 'text-[#14191F] font-semibold' : 'hover:text-[#14191F]'
-                }`}
-              >
-                <tab.icon className="w-3.5 h-3.5" strokeWidth={1.8} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
         <div className="flex items-center gap-2 sm:gap-2.5">
+          {savedTripsCount > 0 && (
+            <button
+              type="button"
+              onClick={onOpenSidebar}
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-white hover:bg-black/[0.04] border border-black/[0.09] px-3 py-1.5 text-[12px] font-medium text-[#2C333A] transition-colors cursor-pointer"
+            >
+              <Briefcase className="w-3.5 h-3.5 text-[#5A626A]" strokeWidth={1.8} />
+              <span>My trips</span>
+              <span className="font-tabular text-[11px] text-[#7B828A]">{savedTripsCount}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={userProfile ? onOpenProfile : onOpenAuth}

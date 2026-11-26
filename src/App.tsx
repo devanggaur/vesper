@@ -317,6 +317,7 @@ export function App() {
           >
             <LandingView
               userProfile={userProfile}
+              savedTripsCount={recentTrips.length}
               onStartTrip={handleStartTrip}
               onOpenSidebar={() => {
                 refreshRecentTrips();
