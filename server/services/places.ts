@@ -164,6 +164,103 @@ export async function searchPlacesCached(
   return results;
 }
 
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Spatial circle Text Search against Google Places API (New) using `locationBias.circle`
+ * and strict Haversine bounding so Circle-to-Ask and Along-the-Way detours stay tightly
+ * within the exact map area the traveler drew. Cached 14 days in Supabase.
+ */
+export async function searchPlacesInCircleCached(params: {
+  textQuery: string;
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+  pageSize?: number;
+  fallbackArea?: string;
+}): Promise<GooglePlaceLite[]> {
+  const clampedRadius = Math.min(25000, Math.max(250, Math.round(params.radiusMeters)));
+  const pageSize = params.pageSize ?? 6;
+  const fallbackArea = params.fallbackArea || 'Selected area';
+  const key = `places:circle:${params.textQuery.toLowerCase().trim()}:${params.lat.toFixed(3)},${params.lng.toFixed(3)}:r${Math.round(clampedRadius / 100) * 100}:n${pageSize}`;
+
+  const cached = await store.getCache<GooglePlaceLite[]>(key);
+  if (cached) return cached;
+  if (!config.googlePlacesApiKey) return [];
+
+  const fieldMask = [
+    'places.id',
+    'places.displayName',
+    'places.shortFormattedAddress',
+    'places.formattedAddress',
+    'places.location',
+    'places.rating',
+    'places.userRatingCount',
+    'places.priceLevel',
+    'places.primaryTypeDisplayName',
+    'places.primaryType',
+    'places.photos',
+    'places.editorialSummary',
+    'places.websiteUri',
+    'places.internationalPhoneNumber',
+    'places.regularOpeningHours.weekdayDescriptions',
+  ].join(',');
+
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': config.googlePlacesApiKey,
+      'X-Goog-FieldMask': fieldMask,
+    },
+    body: JSON.stringify({
+      textQuery: params.textQuery,
+      pageSize,
+      languageCode: 'en',
+      locationBias: {
+        circle: {
+          center: { latitude: params.lat, longitude: params.lng },
+          radius: clampedRadius,
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    console.warn(`[places] circle search "${params.textQuery}" failed (${res.status}):`, errText.slice(0, 160));
+    return [];
+  }
+
+  const data = (await res.json()) as { places?: RawGooglePlace[] };
+  const normalized = (data.places || [])
+    .map((p) => normalizePlace(p, fallbackArea))
+    .filter((p): p is GooglePlaceLite => p !== null);
+
+  // Keep results reasonably inside the user's drawn circle (1.55x tolerance for boundary venues)
+  const maxDist = Math.max(clampedRadius * 1.55, 850);
+  const bounded = normalized
+    .map((p) => ({ p, dist: haversineMeters(params.lat, params.lng, p.lat, p.lng) }))
+    .sort((a, b) => a.dist - b.dist);
+
+  const within = bounded.filter((x) => x.dist <= maxDist).map((x) => x.p);
+  const finalResults = within.length > 0 ? within : bounded.slice(0, Math.min(4, bounded.length)).map((x) => x.p);
+
+  if (finalResults.length > 0) {
+    await store.setCache(key, finalResults, 14);
+  }
+  return finalResults;
+}
+
 /**
  * Verifies a single AI-curated venue name against Google Places API (New) (`pageSize: 1`)
  * with 14-day Supabase caching. Returns `null` if the venue cannot be grounded as real,

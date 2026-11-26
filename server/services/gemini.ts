@@ -13,8 +13,8 @@ import type { TripDayRecord } from './supabase';
 
 const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
 
-/** Short-circuit models that recently hit 429 rate-limit backoff or timed out (5-minute cooldown). */
-const MODEL_COOLDOWN_MS = 5 * 60 * 1000;
+/** Short-circuit models that recently hit 429 rate-limit backoff or timed out (30-minute cooldown). */
+const MODEL_COOLDOWN_MS = 30 * 60 * 1000;
 const modelCooldownUntil = new Map<string, number>();
 
 function isModelCoolingDown(model: string): boolean {
@@ -904,7 +904,7 @@ Where:
     let rawAccumulated = '';
     let emittedLen = 0;
     let enteredMeta = false;
-    const connectTimeoutMs = isLastModel ? 14000 : 6500;
+    const connectTimeoutMs = isLastModel ? 14000 : 4500;
 
     try {
       const stream = await withTimeout(

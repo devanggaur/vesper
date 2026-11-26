@@ -1156,23 +1156,85 @@ tripsRoutes.post('/:id/chat/stream', async (c) => {
 
   return streamSSE(c, async (stream) => {
     try {
-      const { fullText, meta } = await streamCoPilotTurn({
-        destination: trip.destination,
-        country: trip.country,
-        datesLabel: trip.dates_label,
-        travelers: trip.travelers,
-        tasteProfile: trip.taste_profile,
-        days: trip.day_labels,
-        userMessage: body.message,
-        savedItems: body.savedItems || [],
-        activeTab: body.activeTab || 'discover',
-        inspectingEntity: body.inspectingEntity,
-        groupSummary,
-        recentHistory,
-        onTextDelta: (text) => {
-          stream.writeSSE({ event: 'delta', data: JSON.stringify({ text }) }).catch(() => {});
-        },
-      });
+      let fullText = '';
+      let meta: Awaited<ReturnType<typeof streamCoPilotTurn>>['meta'] = {
+        suggestions: [],
+        action: { type: 'none' },
+        mutations: [],
+        placesTitle: undefined,
+        recommendedPlaces: [],
+        hotelsTitle: undefined,
+        recommendedHotels: [],
+      };
+
+      try {
+        const res = await streamCoPilotTurn({
+          destination: trip.destination,
+          country: trip.country,
+          datesLabel: trip.dates_label,
+          travelers: trip.travelers,
+          tasteProfile: trip.taste_profile,
+          days: trip.day_labels,
+          userMessage: body.message,
+          savedItems: body.savedItems || [],
+          activeTab: body.activeTab || 'discover',
+          inspectingEntity: body.inspectingEntity,
+          groupSummary,
+          recentHistory,
+          onTextDelta: (text) => {
+            stream.writeSSE({ event: 'delta', data: JSON.stringify({ text }) }).catch(() => {});
+          },
+        });
+        fullText = res.fullText;
+        meta = res.meta;
+      } catch (llmErr) {
+        // Zero-LLM resilient fallback: even if Gemini hits Free-Tier 429 across all models,
+        // still answer hotel, flight, and place queries with live SerpApi / Google Places cards!
+        console.warn('[chat-stream] Gemini unavailable, using live Places/SerpApi fallback:', (llmErr as Error)?.message?.slice(0, 140));
+        const lowerMsg = body.message.toLowerCase();
+        const isHotelFallback = /\b(hotel|hotels|stay|stays|where to stay|accommodation|resort|lodging|hostel)\b/i.test(lowerMsg);
+        const isFlightFallback = /\b(flight|flights|fly|airline|airfare)\b/i.test(lowerMsg);
+
+        if (isHotelFallback) {
+          fullText = `Here are top-rated stays in **${trip.destination}** for **${trip.dates_label}**—hover any card to see how close it sits to your planned stops, or click **View rooms** to compare rates:`;
+          meta = {
+            ...meta,
+            hotelsTitle: `Top Stays in ${trip.destination}`,
+            suggestions: [`Compare all stays in ${trip.destination}`, 'Show stays on the map'],
+          };
+        } else if (isFlightFallback) {
+          fullText = `Opening live round-trip flights to **${trip.destination}** for **${trip.dates_label}** right below so you can compare airlines, stops, and fares:`;
+          meta = {
+            ...meta,
+            action: { type: 'open_bookings_flights' },
+            suggestions: [`Find boutique stays in ${trip.destination}`],
+          };
+        } else {
+          // Run direct live Google Places search for the user's request!
+          const cleanedQuery = body.message
+            .replace(/\b(recommend|find|suggest|show me|what are|where should|best|great|good|amazing|some|please|can you|for our trip|in)\b/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          const searchTerm = cleanedQuery.length >= 3 ? cleanedQuery : 'top restaurants and sights';
+          fullText = `Here are verified local favorites matching **${searchTerm}** in **${trip.destination}**—tap **+** on any card to add it to **My Trip**, or click to see hours and photos:`;
+          meta = {
+            ...meta,
+            placesTitle: `Verified Picks in ${trip.destination}`,
+            recommendedPlaces: [{ query: searchTerm }],
+            suggestions: [`Find boutique stays in ${trip.destination}`, `Organize my ${trip.destination} itinerary into days`],
+          };
+          // Expand direct text search into up to 4 cards by running searchPlacesCached directly below
+          const directHits = await searchPlacesCached(`${searchTerm} ${trip.destination}`, 4, trip.destination);
+          if (directHits.length > 0) {
+            meta.recommendedPlaces = directHits.map((h) => ({
+              query: h.name,
+              note: h.editorialSummary || `${h.primaryType} in ${h.neighborhood} (${h.rating.toFixed(1)}★).`,
+              category: h.primaryType,
+            }));
+          }
+        }
+        await stream.writeSSE({ event: 'delta', data: JSON.stringify({ text: fullText }) });
+      }
 
       // Execute any structured itinerary mutations (add_place / remove_item / move_item)
       let workingItems: TripSavedItem[] = [...(body.savedItems || [])];

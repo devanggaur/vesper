@@ -282,11 +282,15 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setTasteCalibrated(true);
     setSheetTarget(null);
     setMobileView('stream');
+    // When opening Stays, show the Live Map on desktop so Stay Gravity spider lines respond as you hover hotels!
+    if (kind === 'stays') {
+      setRightPanel('map');
+    }
     if (town !== undefined) setActiveBookingsTown(town);
     const targetName = town || destination || 'your trip';
     const introText =
       kind === 'stays'
-        ? `Here are top stays in **${targetName}** for **${datesLabel}**—compare nightly rates, sleep quality, and ratings right here:`
+        ? `Here are top stays in **${targetName}** for **${datesLabel}**—hover any stay to see live walking times to your saved stops on the map:`
         : `Here are live round-trip flights from **${homeAirport || 'San Francisco'}** to **${destination || 'your destination'}** for **${datesLabel}**:`;
 
     setStreamWidgets((prev) => {
@@ -296,6 +300,124 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       }
       return [...prev, { id: `${kind}-${Date.now()}`, kind, town: town ?? null, introText }];
     });
+  };
+
+  /** Powers "Circle to Ask Vesper" directly from the map lasso tool. */
+  const handleAskMapArea = async (payload: {
+    lat: number;
+    lng: number;
+    radiusMeters: number;
+    query: string;
+  }) => {
+    setMobileView('stream');
+    const nights = Math.max(1, (days.length || 3) - 1);
+    const userLabel = `Inside my circled area: ${payload.query}`;
+    setMessages((prev) => [...prev, { id: `u-area-${Date.now()}`, role: 'user', text: userLabel }]);
+    setStatusStep('Scanning verified spots inside your circle...');
+    try {
+      const res = await travelApi.searchPlacesInArea({
+        ...payload,
+        destination,
+        nights,
+      });
+      setStatusStep(null);
+      if (res.kind === 'hotels' && res.hotels.length > 0) {
+        setHotels((prev) => {
+          const existing = new Set(prev.map((h) => h.id));
+          return [...prev, ...res.hotels.filter((h) => !existing.has(h.id))];
+        });
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-area-${Date.now()}`,
+            role: 'assistant',
+            blocks: [
+              {
+                type: 'text',
+                content: `Found **${res.hotels.length} well-reviewed stays** right inside your circled zone around **${res.areaLabel}**—hover any card to compare walk times to your saved stops:`,
+              },
+              {
+                type: 'hotels',
+                title: `Stays near ${res.areaLabel}`,
+                hotels: res.hotels,
+                datesLabel,
+                nights,
+              },
+            ],
+          },
+        ]);
+      } else if (res.places.length > 0) {
+        setPlaces((prev) => {
+          const existing = new Set(prev.map((p) => p.id));
+          return [...prev, ...res.places.filter((p) => !existing.has(p.id))];
+        });
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-area-${Date.now()}`,
+            role: 'assistant',
+            blocks: [
+              {
+                type: 'text',
+                content: `Here are **${res.places.length} verified spots** inside your circled area near **${res.areaLabel}**—tap **+** to shortlist any of them:`,
+              },
+              {
+                type: 'places',
+                title: `Inside ${res.areaLabel}`,
+                places: res.places,
+              },
+            ],
+          },
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-area-empty-${Date.now()}`,
+            role: 'assistant',
+            blocks: [
+              {
+                type: 'text',
+                content: `I didn’t find an exact match inside that tight circle—try drawing a slightly wider zone or trying another vibe!`,
+              },
+            ],
+          },
+        ]);
+      }
+    } catch {
+      setStatusStep(null);
+      onNotify('Could not scan that map area—please try again.');
+    }
+  };
+
+  /** Powers "Along the Way" Micro-Detours: slots a gem directly between two consecutive stops! */
+  const handleAddDetourPlace = (place: PlaceItem, day: string, time: string) => {
+    setPlaces((prev) => (prev.some((p) => p.id === place.id) ? prev : [...prev, place]));
+    const bt = inferPlaceBookingType(place);
+    const next: TripSavedItem[] = [
+      ...savedItems.filter((i) => i.refId !== place.id),
+      {
+        id: `saved-${place.id}`,
+        refId: place.id,
+        type: 'place',
+        title: place.name,
+        subtitle: place.neighborhood,
+        image: place.image,
+        day,
+        time,
+        coords: place.coords,
+        bookingMeta: {
+          bookingType: bt,
+          status: bt === 'walk_in' ? 'not_needed' : 'needed',
+          advanceLeadTime: place.advanceLeadTime,
+          officialUrl: place.website,
+          estimatedCostUsd: place.estimatedCostUsd,
+        },
+      },
+    ];
+    setSavedItems(next);
+    persistItems(next);
+    onNotify(`Slotted ${place.name} onto ${day} at ${time}`);
   };
 
   // Keep latest tripId in a ref for async handlers (e.g., if user clicks TasteCard rapidly)
@@ -1138,6 +1260,16 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setThinkingLabel(null);
     setStreamingText(null);
     setStatusStep(null);
+
+    if (/\b(hotel|hotels|stay|stays|where to stay|accommodation|resort|lodging)\b/i.test(lower)) {
+      summonBookingWidget('stays');
+      return;
+    }
+    if (/\b(flight|flights|fly|airline|airfare)\b/i.test(lower)) {
+      summonBookingWidget('flights');
+      return;
+    }
+
     setMessages((prev) => [
       ...prev,
       {
@@ -1146,7 +1278,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         blocks: [
           {
             type: 'text',
-            content: `Noted for **${destination}**! You can organize your stops on the **Timeline**, inspect curved routes on **Map**, or browse stays in **Bookings**.`,
+            content: `Vesper hit a brief connection hiccup reaching **${destination}** insights. Try asking again in a moment, or explore live stays and places below:`,
+          },
+          {
+            type: 'suggestions',
+            items: [`Find boutique stays in ${destination}`, `Organize my ${destination} itinerary into days`],
           },
         ],
       },
@@ -1403,6 +1539,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               <InteractiveMap
                 mapStage="pins"
                 tripMode={tripMode}
+                destination={destination}
                 center={mapCenter}
                 days={days}
                 places={places}
@@ -1411,8 +1548,15 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 showHotelPins={hotels.length > 0}
                 highlightedId={hoveredEntityId}
                 focusedDay={focusedMapDay}
+                readOnly={false}
                 onSelectPlace={(p) => setSheetTarget({ kind: 'place', item: p })}
                 onSelectHotel={(h) => setSheetTarget({ kind: 'hotel', item: h })}
+                onHoverId={setHoveredEntityId}
+                onAskArea={handleAskMapArea}
+                onAddDetourPlace={handleAddDetourPlace}
+                onOptimizeItinerary={() =>
+                  runOrganizeItinerary(`Optimize my ${destination} route to remove zigzags`)
+                }
               />
 
               {/* Floating Top-Right Segmented `My Trip | Map` Toggle (Desktop, aligned with Day filter & clear of zoom controls) */}

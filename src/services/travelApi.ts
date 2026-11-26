@@ -479,6 +479,40 @@ export const travelApi = {
     }
   },
 
+  async searchPlacesInArea(payload: {
+    lat: number;
+    lng: number;
+    radiusMeters: number;
+    query: string;
+    destination: string;
+    nights?: number;
+  }): Promise<{
+    kind: 'places' | 'hotels';
+    areaLabel: string;
+    places: PlaceItem[];
+    hotels: HotelItem[];
+  }> {
+    return apiFetch('/api/places/area-search', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async searchAlongRoute(payload: {
+    from: Coordinates;
+    to: Coordinates;
+    destination: string;
+    category?: 'coffee' | 'viewpoint' | 'bite';
+    excludeNames?: string[];
+  }): Promise<{
+    detours: Array<{ place: PlaceItem; detourMinutes: number }>;
+  }> {
+    return apiFetch('/api/places/along-route', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   /* ── Local Seed Fallback Helpers (used when offline or for Flight GDS Phase 3) ── */
 
   getDiscoverCatalog(_destination = 'Mexico City'): DiscoverCatalog {
