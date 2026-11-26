@@ -135,7 +135,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   );
   const [focusedMapDay, setFocusedMapDay] = useState<string>('All');
   const [tripMode, setTripMode] = useState<TripMode>(() =>
-    /\b(road\s*trip|roadtrip|scenic\s+drive|driving\s+(tour|trip|loop|route)|drive\s+from|driving\s+from|pch|pacific\s+coast\s+highway|highway\s*1|icefields\s+parkway|ring\s+road|great\s+ocean\s+road|car\s+loop)\b/i.test(
+    /\b(road\s*trip|roadtrip|scenic\s+drive|driving\s+(tour|trip|loop|route|itinerary)|drive\s+from|driving\s+from|car\s+trip|campervan|rv\s+trip)\b/i.test(
       initialPrompt
     )
       ? 'roadtrip'

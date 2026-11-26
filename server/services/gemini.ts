@@ -94,9 +94,12 @@ export interface ParsedTripIntent {
 
 const DAY_COLORS = ['#C05A2B', '#2563EB', '#0F766E', '#7C3AED', '#D97706'];
 
-/** Deterministic fast check for road-trip prompts so Road Trip Mode activates reliably. */
+/**
+ * Strict explicit check for road-trip prompts: only activates Road Trip Mode when
+ * the user explicitly asks for a road trip, scenic drive, or driving route.
+ */
 export function detectRoadTripPrompt(prompt: string): boolean {
-  return /\b(road\s*trip|roadtrip|scenic\s+drive|driving\s+(tour|trip|loop|route|itinerary)|drive\s+from|driving\s+from|pch|pacific\s+coast\s+highway|highway\s*1|route\s*66|icefields\s+parkway|blue\s+ridge|amalfi\s+drive|ring\s+road|great\s+ocean\s+road|car\s+loop|banff.*loop|campervan|rv\s+trip)\b/i.test(
+  return /\b(road\s*trip|roadtrip|scenic\s+drive|driving\s+(tour|trip|loop|route|itinerary)|drive\s+from|driving\s+from|car\s+trip|campervan|rv\s+trip)\b/i.test(
     prompt
   );
 }
@@ -194,12 +197,14 @@ export async function parseTripPrompt(
     hotelsQuery: string;
   }>(
     `User request: "${userPrompt}"\nSelected dates: "${datesLabel}"\nTravelers: "${travelers}"`,
-    'You are Vesper, an editorial AI travel planner. Parse any travel prompt worldwide into clean structured trip metadata. Detect tripMode="roadtrip" for driving trips, scenic highway corridors, multi-town loops, or national park drives — and for road trips, populate realistic legFrom, legTo, overnightTown, estDriveMinutes, and estDriveMiles on every day! Keep dayLabels between 3 and 5 days (default 3 days for weekends). Use crisp, warm editorial phrasing.',
+    regexRoadTrip
+      ? 'You are Vesper, an editorial AI travel planner. The user explicitly requested a road trip. Parse the prompt into clean structured trip metadata with tripMode="roadtrip", realistic startCity, transportMode, and legFrom, legTo, overnightTown, estDriveMinutes, and estDriveMiles on every day! Keep dayLabels between 3 and 5 days. Use crisp, warm editorial phrasing.'
+      : 'You are Vesper, an editorial AI travel planner. Parse any travel prompt worldwide into clean structured trip metadata with tripMode="city". Keep dayLabels between 3 and 5 days (default 3 days for weekends). Use crisp, warm editorial phrasing.',
     schema
   );
 
-  const tripMode: 'city' | 'roadtrip' =
-    result.tripMode === 'roadtrip' || regexRoadTrip ? 'roadtrip' : 'city';
+  // Only activate Road Trip Mode when the user explicitly asked for a road trip / driving trip
+  const tripMode: 'city' | 'roadtrip' = regexRoadTrip ? 'roadtrip' : 'city';
 
   const days: TripDayRecord[] = (result.dayLabels || []).slice(0, 5).map((d, idx) => ({
     key: d.key,

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, Car, Check, Clock, Compass, MapPin, Plane, Sparkles, Users } from 'lucide-react';
+import { ArrowRight, Car, Check, Clock, MapPin, Plane, Sparkles, Users } from 'lucide-react';
 import { RoadTripConfig, TripMode } from '../../types/travel';
 import { SmartImage } from '../common/SmartImage';
 
@@ -192,20 +192,6 @@ export const TasteCard: React.FC<TasteCardProps> = ({
     return idx >= 0 ? idx : 2;
   });
 
-  const handleModeSwitch = (nextMode: TripMode) => {
-    setTripMode(nextMode);
-    const targetTiles = nextMode === 'roadtrip' ? ROADTRIP_VIBE_TILES : CITY_VIBE_TILES;
-    const validIds = new Set(targetTiles.map((t) => t.id));
-    const overlapping = selectedVibes.filter((v) => validIds.has(v));
-    if (overlapping.length === 0) {
-      setSelectedVibes(
-        nextMode === 'roadtrip'
-          ? ['Scenic Overlooks', 'Coastal & Hikes', 'Small Towns & Bakeries']
-          : ['Museums & Art', 'Architecture', 'Iconic Dining']
-      );
-    }
-  };
-
   const toggleVibe = (id: string) => {
     setSelectedVibes((prev) =>
       prev.includes(id)
@@ -225,11 +211,15 @@ export const TasteCard: React.FC<TasteCardProps> = ({
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
       className="max-w-[760px] mx-auto w-full rounded-[26px] bg-white border border-black/[0.08] shadow-[0_12px_40px_rgba(14,32,52,0.06)] p-5 sm:p-7 space-y-6"
     >
-      {/* Header + City vs. Road Trip Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-4 border-b border-black/[0.06]">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 pb-4 border-b border-black/[0.06]">
         <div>
           <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#C85A17] mb-1">
-            <Sparkles className="w-3 h-3" />
+            {tripMode === 'roadtrip' ? (
+              <Car className="w-3.5 h-3.5" />
+            ) : (
+              <Sparkles className="w-3 h-3" />
+            )}
             <span>
               {tripMode === 'roadtrip' ? 'Road Trip Calibration' : '5-Second Taste Calibration'}
             </span>
@@ -239,41 +229,7 @@ export const TasteCard: React.FC<TasteCardProps> = ({
           </h2>
         </div>
 
-        <div className="flex flex-col sm:items-end gap-2 shrink-0">
-          <div
-            className="inline-flex items-center rounded-full p-1 bg-[#F3F2EC] border border-black/[0.07]"
-            role="group"
-            aria-label="Trip format"
-          >
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('city')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium transition-all cursor-pointer ${
-                tripMode === 'city'
-                  ? 'bg-[#0E2034] text-white shadow-2xs'
-                  : 'text-[#5A626A] hover:text-[#14191F]'
-              }`}
-              style={tripMode === 'city' ? { color: '#FFFFFF' } : undefined}
-            >
-              <Compass className="w-3.5 h-3.5" />
-              <span>City trip</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('roadtrip')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium transition-all cursor-pointer ${
-                tripMode === 'roadtrip'
-                  ? 'bg-[#0E2034] text-white shadow-2xs'
-                  : 'text-[#5A626A] hover:text-[#14191F]'
-              }`}
-              style={tripMode === 'roadtrip' ? { color: '#FFFFFF' } : undefined}
-            >
-              <Car className="w-3.5 h-3.5" />
-              <span>Road trip</span>
-            </button>
-          </div>
-          <span className="font-tabular text-[12px] text-[#7B828A]">{dates}</span>
-        </div>
+        <span className="font-tabular text-[12px] text-[#7B828A] shrink-0">{dates}</span>
       </div>
 
       {/* Road Trip Setup Panel (shown only when Road Trip Mode is active) */}
